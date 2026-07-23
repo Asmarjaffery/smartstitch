@@ -1,0 +1,18 @@
+enum AiIntent {
+  booking,
+  wallet,
+  withdraw,
+  measurements,
+  payment,
+  refund,
+  delivery,
+  tracking,
+  fabricRecommendation,
+  designRecommendation,
+  translation,
+  messageSuggestion,
+  professionalReply,
+  priceEstimate,
+  callRider,
+  generalConversation,
+}

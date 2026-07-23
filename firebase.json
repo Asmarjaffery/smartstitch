@@ -1,0 +1,37 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "smart-stitch-8e4ad",
+          "appId": "1:975527246570:android:14f96d4f98d5a92432f593",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "smart-stitch-8e4ad",
+          "configurations": {
+            "android": "1:975527246570:android:14f96d4f98d5a92432f593",
+            "web": "1:975527246570:web:341f97b20ea068be32f593",
+            "windows": "1:975527246570:web:f093198f12acdf0d32f593"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}

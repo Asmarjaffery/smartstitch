@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "smartstitch",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=GEMINI_API_KEY=AQ.Ab8RN6KXO8_3NTR--Ftbs-JYiirxFxPcXGGcScNNcOYqU3qErQ"
+            ]
+        }
+    ]
+}

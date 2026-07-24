@@ -36,7 +36,8 @@ class BookingConfirmScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: theme.colorScheme.surface,
                 borderRadius: AppRadius.large,
-                border: Border.all(color: Theme.of(context).colorScheme.outline),
+                border:
+                    Border.all(color: Theme.of(context).colorScheme.outline),
                 boxShadow: AppShadows.soft(AppColors.primary),
               ),
               child: Column(
@@ -54,8 +55,7 @@ class BookingConfirmScreen extends StatelessWidget {
                             color: Colors.white, size: 24),
                       ),
                       const SizedBox(width: 12),
-                      const Text('Booking Summary',
-                          style: AppTextStyles.h4),
+                      const Text('Booking Summary', style: AppTextStyles.h4),
                     ],
                   ),
                   const Divider(height: 28),
@@ -64,8 +64,7 @@ class BookingConfirmScreen extends StatelessWidget {
                   Obx(() => _SummaryRow(
                         icon: Icons.checkroom_rounded,
                         label: 'Service',
-                        value: ctrl.selectedService.value?.title ??
-                            '-',
+                        value: ctrl.selectedService.value?.title ?? '-',
                       )),
                   const SizedBox(height: 12),
 
@@ -75,9 +74,8 @@ class BookingConfirmScreen extends StatelessWidget {
                             ? Icons.home_outlined
                             : Icons.store_outlined,
                         label: 'Visit Type',
-                        value: ctrl.isHomeVisit.value
-                            ? 'Home Visit'
-                            : 'Drop Off',
+                        value:
+                            ctrl.isHomeVisit.value ? 'Home Visit' : 'Drop Off',
                       )),
                   const SizedBox(height: 12),
 
@@ -116,8 +114,9 @@ class BookingConfirmScreen extends StatelessWidget {
                   }),
 
                   // Design Image
+                  // Design Images
                   Obx(() {
-                    if (ctrl.designImageUrl.value.isEmpty) {
+                    if (ctrl.designImageUrls.isEmpty) {
                       return const SizedBox();
                     }
                     return Padding(
@@ -125,18 +124,36 @@ class BookingConfirmScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Your Design',
+                          Text('Your Design(s)',
                               style: AppTextStyles.labelMedium.copyWith(
-                                  color: Theme.of(context).textTheme.bodySmall?.color)),
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.color)),
                           const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: AppRadius.medium,
-                            child: Image.network(
-                              ctrl.designImageUrl.value,
-                              height: 120,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
+                          SizedBox(
+                            height: 100,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: ctrl.designImageUrls.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (context, index) => ClipRRect(
+                                borderRadius: AppRadius.medium,
+                                child: Image.network(
+                                  ctrl.designImageUrls[index],
+                                  height: 100,
+                                  width: 100,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${ctrl.designImageUrls.length} image(s) • +Rs ${ctrl.designImageFee.toInt()}',
+                            style: AppTextStyles.caption
+                                .copyWith(color: AppColors.primary),
                           ),
                         ],
                       ),
@@ -162,8 +179,7 @@ class BookingConfirmScreen extends StatelessWidget {
 
                   // Price
                   Obx(() => Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Estimated Price',
                               style: AppTextStyles.labelLarge),
@@ -210,20 +226,16 @@ class BookingConfirmScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: ctrl.isLoading.value
-                        ? null
-                        : ctrl.createBooking,
+                    onPressed: ctrl.isLoading.value ? null : ctrl.createBooking,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       shape: const RoundedRectangleBorder(
                           borderRadius: AppRadius.medium),
                     ),
                     child: ctrl.isLoading.value
-                        ? const CircularProgressIndicator(
-                            color: Colors.white)
+                        ? const CircularProgressIndicator(color: Colors.white)
                         : Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               const Icon(Icons.check_circle_outline_rounded,
                                   color: Colors.white),
@@ -262,12 +274,27 @@ class BookingConfirmScreen extends StatelessWidget {
 
   String _formatDate(DateTime dt) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     const days = [
-      'Monday', 'Tuesday', 'Wednesday',
-      'Thursday', 'Friday', 'Saturday', 'Sunday'
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
     ];
     return '${days[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
@@ -296,8 +323,8 @@ class _SummaryRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label,
-                style: AppTextStyles.caption
-                    .copyWith(color: Theme.of(context).textTheme.bodySmall?.color)),
+                style: AppTextStyles.caption.copyWith(
+                    color: Theme.of(context).textTheme.bodySmall?.color)),
             const SizedBox(height: 2),
             Text(value, style: AppTextStyles.labelMedium),
           ],
@@ -316,11 +343,23 @@ class _StepIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _Step(number: 1, label: 'Details', isActive: currentStep >= 1, isDone: currentStep > 1),
+        _Step(
+            number: 1,
+            label: 'Details',
+            isActive: currentStep >= 1,
+            isDone: currentStep > 1),
         _StepLine(isActive: currentStep > 1),
-        _Step(number: 2, label: 'Confirm', isActive: currentStep >= 2, isDone: currentStep > 2),
+        _Step(
+            number: 2,
+            label: 'Confirm',
+            isActive: currentStep >= 2,
+            isDone: currentStep > 2),
         _StepLine(isActive: currentStep > 2),
-        _Step(number: 3, label: 'Done', isActive: currentStep >= 3, isDone: currentStep > 3),
+        _Step(
+            number: 3,
+            label: 'Done',
+            isActive: currentStep >= 3,
+            isDone: currentStep > 3),
       ],
     );
   }
@@ -331,7 +370,11 @@ class _Step extends StatelessWidget {
   final String label;
   final bool isActive;
   final bool isDone;
-  const _Step({required this.number, required this.label, required this.isActive, required this.isDone});
+  const _Step(
+      {required this.number,
+      required this.label,
+      required this.isActive,
+      required this.isDone});
 
   @override
   Widget build(BuildContext context) {
@@ -341,7 +384,9 @@ class _Step extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: isActive ? AppColors.primary : Theme.of(context).colorScheme.outline,
+            color: isActive
+                ? AppColors.primary
+                : Theme.of(context).colorScheme.outline,
             shape: BoxShape.circle,
           ),
           child: Center(
@@ -375,7 +420,9 @@ class _StepLine extends StatelessWidget {
       child: Container(
         height: 2,
         margin: const EdgeInsets.only(bottom: 20),
-        color: isActive ? AppColors.primary : Theme.of(context).colorScheme.outline,
+        color: isActive
+            ? AppColors.primary
+            : Theme.of(context).colorScheme.outline,
       ),
     );
   }

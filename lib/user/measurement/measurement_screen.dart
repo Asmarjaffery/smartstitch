@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:smartstitch/core/widgets/clothing_type_selector.dart';
+import 'package:smartstitch/core/widgets/measurement_field_input.dart';
+import 'package:smartstitch/core/widgets/measurement_history_card.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/models/body_measurement_model.dart';
+import 'package:smartstitch/models/clothing_type.dart';
+import 'package:smartstitch/models/measurement_field.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
 import 'package:smartstitch/user/measurement/measurement_controller.dart';
+
 
 class MeasurementScreen extends StatefulWidget {
   const MeasurementScreen({super.key});
@@ -15,6 +21,18 @@ class MeasurementScreen extends StatefulWidget {
 
 class _MeasurementScreenState extends State<MeasurementScreen> {
   Future<void> _launchAiScanner(BuildContext context) async {
+    final type = MeasurementController.to.selectedClothingType.value;
+    if (type == null) {
+      AppHelpers.showError('Please select what you\'d like to stitch first.');
+      return;
+    }
+    if (type == ClothingType.custom &&
+        MeasurementController.to.customSelectedFields.isEmpty) {
+      final fields = await _showCustomFieldPicker(context);
+      if (fields == null || fields.isEmpty) return;
+      MeasurementController.to.setCustomFields(fields);
+    }
+
     final ctrl = TextEditingController();
     final height = await showDialog<double>(
       context: context,
@@ -61,25 +79,122 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     }
   }
 
-  void _showManualEntrySheet(BuildContext context) {
-    final heightCtrl = TextEditingController();
-    final chestCtrl = TextEditingController();
-    final waistCtrl = TextEditingController();
-    final shoulderCtrl = TextEditingController();
-    final hipsCtrl = TextEditingController();
-    final sleeveCtrl = TextEditingController();
-    final inseamCtrl = TextEditingController();
-    final neckCtrl = TextEditingController();
+  /// Checklist shown only for [ClothingType.custom] so the customer picks
+  /// exactly which measurements they want to provide.
+  Future<Set<MeasurementField>?> _showCustomFieldPicker(
+      BuildContext context) async {
+    final selected = <MeasurementField>{...MeasurementController.to.customSelectedFields};
 
+    return showModalBottomSheet<Set<MeasurementField>>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Choose Your Measurements', style: AppTextStyles.h4),
+                Text(
+                  'Pick every measurement you want to provide',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.lightTextSecondary),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        for (final field in ClothingMeasurementRegistry.allFields)
+                          CheckboxListTile(
+                            value: selected.contains(field),
+                            title: Text(MeasurementFieldRegistry.specOf(field).label),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (checked) {
+                              setSheetState(() {
+                                if (checked == true) {
+                                  selected.add(field);
+                                } else {
+                                  selected.remove(field);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () => Navigator.pop(ctx, selected),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: AppRadius.medium),
+                    ),
+                    child: Text('Continue',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showManualEntrySheet(BuildContext context) async {
+    final type = MeasurementController.to.selectedClothingType.value;
+    if (type == null) {
+      AppHelpers.showError('Please select what you\'d like to stitch first.');
+      return;
+    }
+
+    Set<MeasurementField> customFields = {...MeasurementController.to.customSelectedFields};
+    if (type == ClothingType.custom) {
+      final picked = await _showCustomFieldPicker(context);
+      if (picked == null || picked.isEmpty) return;
+      customFields = picked;
+      MeasurementController.to.setCustomFields(picked);
+    }
+
+    final fields = type == ClothingType.custom
+        ? customFields.toList()
+        : ClothingMeasurementRegistry.of(type).displayFields;
+    final requiredFields = type == ClothingType.custom
+        ? customFields
+        : ClothingMeasurementRegistry.of(type).required;
+
+    final controllers = <MeasurementField, TextEditingController>{
+      for (final f in fields) f: TextEditingController(),
+    };
+
+    if (!context.mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: Container(
           padding: const EdgeInsets.all(24),
           constraints:
@@ -91,7 +206,13 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Manual Measurements', style: AppTextStyles.h4),
+              Row(
+                children: [
+                  Text(type.emoji, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 6),
+                  Text('${type.label} Measurements', style: AppTextStyles.h4),
+                ],
+              ),
               Text(
                 'All values in cm',
                 style: AppTextStyles.bodySmall
@@ -102,14 +223,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      _Field(ctrl: heightCtrl, label: 'Height'),
-                      _Field(ctrl: chestCtrl, label: 'Chest'),
-                      _Field(ctrl: waistCtrl, label: 'Waist'),
-                      _Field(ctrl: shoulderCtrl, label: 'Shoulder'),
-                      _Field(ctrl: hipsCtrl, label: 'Hips'),
-                      _Field(ctrl: sleeveCtrl, label: 'Sleeve Length'),
-                      _Field(ctrl: inseamCtrl, label: 'Inseam'),
-                      _Field(ctrl: neckCtrl, label: 'Neck'),
+                      for (final field in fields)
+                        MeasurementFieldInput(
+                          controller: controllers[field]!,
+                          field: field,
+                          required: requiredFields.contains(field),
+                        ),
                     ],
                   ),
                 ),
@@ -123,16 +242,13 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
                           ? null
                           : () async {
                               await MeasurementController.to.saveManualMeasurement(
-                                height: double.tryParse(heightCtrl.text) ?? 0,
-                                chest: double.tryParse(chestCtrl.text) ?? 0,
-                                waist: double.tryParse(waistCtrl.text) ?? 0,
-                                shoulder: double.tryParse(shoulderCtrl.text) ?? 0,
-                                hips: double.tryParse(hipsCtrl.text) ?? 0,
-                                sleevLength: double.tryParse(sleeveCtrl.text) ?? 0,
-                                inseam: double.tryParse(inseamCtrl.text) ?? 0,
-                                neck: double.tryParse(neckCtrl.text) ?? 0,
+                                clothingType: type,
+                                rawValues: {
+                                  for (final f in fields) f: controllers[f]!.text,
+                                },
+                                customFields: customFields,
                               );
-                              Navigator.pop(ctx);
+                              if (ctx.mounted) Navigator.pop(ctx);
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -144,6 +260,108 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
                               'Save',
+                              style: AppTextStyles.labelLarge
+                                  .copyWith(color: Colors.white),
+                            ),
+                    ),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditSheet(BuildContext context, BodyMeasurementModel m) {
+    final fields = m.activeFields;
+    final requiredFields = m.clothingType == ClothingType.custom
+        ? fields.toSet()
+        : ClothingMeasurementRegistry.of(m.clothingType).required;
+
+    final controllers = <MeasurementField, TextEditingController>{
+      for (final f in fields)
+        f: TextEditingController(text: (m.valueOf(f) ?? 0).toString()),
+    };
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(m.clothingType.emoji, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 6),
+                  Text('Edit ${m.clothingType.label} Measurements',
+                      style: AppTextStyles.h4),
+                ],
+              ),
+              Text(
+                'All values in cm',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.lightTextSecondary),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final field in fields)
+                        MeasurementFieldInput(
+                          controller: controllers[field]!,
+                          field: field,
+                          required: requiredFields.contains(field),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Obx(() => SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: MeasurementController.to.isLoading.value
+                          ? null
+                          : () async {
+                              final errors = _validateEditFields(
+                                m.clothingType,
+                                fields,
+                                requiredFields,
+                                controllers,
+                              );
+                              if (errors.isNotEmpty) {
+                                AppHelpers.showError(errors.first);
+                                return;
+                              }
+                              final updated = _applyFieldValues(m, controllers);
+                              await MeasurementController.to
+                                  .updateMeasurement(updated);
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: AppRadius.medium,
+                        ),
+                      ),
+                      child: MeasurementController.to.isLoading.value
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                              'Update',
                               style: AppTextStyles.labelLarge
                                   .copyWith(color: Colors.white),
                             ),
@@ -175,78 +393,130 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: AppRadius.large,
-                boxShadow: AppShadows.primary,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            const Text('What would you like to stitch?', style: AppTextStyles.h4),
+            const SizedBox(height: 4),
+            Text(
+              'We\'ll only ask for the measurements that garment needs.',
+              style: AppTextStyles.bodySmall
+                  .copyWith(color: AppColors.lightTextSecondary),
+            ),
+            const SizedBox(height: 14),
+            Obx(() => ClothingTypeSelector(
+                  selected: ctrl.selectedClothingType.value,
+                  onSelect: ctrl.selectClothingType,
+                )),
+            const SizedBox(height: 24),
+            Obx(() {
+              final type = ctrl.selectedClothingType.value;
+              if (type == null) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBorder.withOpacity(0.3),
+                    borderRadius: AppRadius.large,
+                  ),
+                  child: Row(
                     children: [
-                      const Icon(Icons.camera_alt_rounded,
-                          color: Colors.white, size: 28),
+                      const Icon(Icons.info_outline_rounded,
+                          color: AppColors.lightTextSecondary),
                       const SizedBox(width: 10),
-                      Text(
-                        'AI Body Scan',
-                        style: AppTextStyles.h4.copyWith(color: Colors.white),
+                      Expanded(
+                        child: Text(
+                          'Select a garment above to unlock AI scan and manual entry.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.lightTextSecondary),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Use your camera to automatically detect body measurements with 90%+ accuracy.',
-                    style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _launchAiScanner(context),
-                          icon: const Icon(Icons.auto_awesome,
-                              color: AppColors.primary),
-                          label: Text(
-                            'Start AI Scan',
-                            style: AppTextStyles.labelLarge
-                                .copyWith(color: AppColors.primary),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: AppRadius.medium,
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: const BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: AppRadius.large,
+                      boxShadow: AppShadows.primary,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.camera_alt_rounded,
+                                color: Colors.white, size: 28),
+                            const SizedBox(width: 10),
+                            Text(
+                              'AI Body Scan',
+                              style:
+                                  AppTextStyles.h4.copyWith(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Use your camera to automatically detect ${type.label.toLowerCase()} measurements with 90%+ accuracy.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _launchAiScanner(context),
+                            icon: const Icon(Icons.auto_awesome,
+                                color: AppColors.primary),
+                            label: Text(
+                              'Start AI Scan',
+                              style: AppTextStyles.labelLarge
+                                  .copyWith(color: AppColors.primary),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.medium,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: OutlinedButton.icon(
-                onPressed: () => _showManualEntrySheet(context),
-                icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
-                label: Text(
-                  'Enter Manually',
-                  style: AppTextStyles.labelLarge
-                      .copyWith(color: AppColors.primary),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.primary),
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: AppRadius.medium,
+                      ],
+                    ),
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showManualEntrySheet(context),
+                      icon: const Icon(Icons.edit_outlined,
+                          color: AppColors.primary),
+                      label: Text(
+                        'Enter Manually',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: AppColors.primary),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: AppRadius.medium,
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: ctrl.resetClothingTypeSelection,
+                    child: const Text('Change garment'),
+                  ),
+                ],
+              );
+            }),
+            const SizedBox(height: 12),
             const Text('History', style: AppTextStyles.h4),
             const SizedBox(height: 12),
             Obx(() {
@@ -277,8 +547,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: ctrl.history.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (_, i) =>
-                    _MeasurementCard(measurement: ctrl.history[i]),
+                itemBuilder: (_, i) => MeasurementHistoryCard(
+                  measurement: ctrl.history[i],
+                  onEdit: () => _showEditSheet(context, ctrl.history[i]),
+                ),
               );
             }),
           ],
@@ -286,272 +558,64 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
       ),
     );
   }
-}
 
-class _MeasurementCard extends StatelessWidget {
-  final BodyMeasurementModel measurement;
-  const _MeasurementCard({required this.measurement});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: AppRadius.large,
-        border: Border.all(color: AppColors.lightBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: measurement.isAiGenerated
-                          ? AppColors.primarySoft
-                          : AppColors.lightBorder,
-                      borderRadius: AppRadius.small,
-                    ),
-                    child: Icon(
-                      measurement.isAiGenerated
-                          ? Icons.auto_awesome
-                          : Icons.edit_outlined,
-                      color: measurement.isAiGenerated
-                          ? AppColors.primary
-                          : AppColors.lightTextSecondary,
-                      size: 16,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    measurement.isAiGenerated ? 'AI Scan' : 'Manual',
-                    style: AppTextStyles.labelMedium,
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  if (measurement.isAiGenerated)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: const BoxDecoration(
-                        color: AppColors.successSoft,
-                        borderRadius: AppRadius.full,
-                      ),
-                      child: Text(
-                        '${(measurement.aiAccuracyScore * 100).toInt()}% accuracy',
-                        style: AppTextStyles.labelSmall
-                            .copyWith(color: AppColors.success),
-                      ),
-                    ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _showEditSheet(context, measurement),
-                    child: const Icon(Icons.edit_outlined,
-                        color: AppColors.primary, size: 20),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () =>
-                        MeasurementController.to.deleteMeasurement(measurement.id),
-                    child: const Icon(Icons.delete_outline_rounded,
-                        color: AppColors.error, size: 20),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _formatDate(measurement.measuredAt),
-            style: AppTextStyles.caption
-                .copyWith(color: AppColors.lightTextSecondary),
-          ),
-          const Divider(height: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              _MeasurementChip(label: 'Height', value: measurement.height),
-              _MeasurementChip(label: 'Chest', value: measurement.chest),
-              _MeasurementChip(label: 'Waist', value: measurement.waist),
-              _MeasurementChip(label: 'Shoulder', value: measurement.shoulder),
-              _MeasurementChip(label: 'Hips', value: measurement.hips),
-              _MeasurementChip(label: 'Sleeve', value: measurement.sleevLength),
-              _MeasurementChip(label: 'Inseam', value: measurement.inseam),
-              _MeasurementChip(label: 'Neck', value: measurement.neck),
-            ],
-          ),
-        ],
-      ),
-    );
+  List<String> _validateEditFields(
+    ClothingType type,
+    List<MeasurementField> fields,
+    Set<MeasurementField> requiredFields,
+    Map<MeasurementField, TextEditingController> controllers,
+  ) {
+    final errors = <String>[];
+    for (final field in fields) {
+      final spec = MeasurementFieldRegistry.specOf(field);
+      final text = controllers[field]!.text.trim();
+      final required = requiredFields.contains(field);
+      if (text.isEmpty) {
+        if (required) errors.add('${spec.label} is required');
+        continue;
+      }
+      final value = double.tryParse(text);
+      if (value == null) {
+        errors.add('${spec.label} must be a number');
+      } else if (value <= 0) {
+        errors.add('${spec.label} must be greater than zero');
+      } else if (value < spec.min || value > spec.max) {
+        errors.add(
+            '${spec.label} must be between ${spec.min.toStringAsFixed(0)}-${spec.max.toStringAsFixed(0)} cm');
+      }
+    }
+    return errors;
   }
 
-  String _formatDate(DateTime dt) {
-    return '${dt.day}/${dt.month}/${dt.year}  ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-  }
+  /// Applies edited text values on top of the original record, keeping
+  /// every field that wasn't in this record's active set untouched.
+  BodyMeasurementModel _applyFieldValues(
+    BodyMeasurementModel original,
+    Map<MeasurementField, TextEditingController> controllers,
+  ) {
+    double? val(MeasurementField f) {
+      final c = controllers[f];
+      if (c == null) return original.valueOf(f);
+      final parsed = double.tryParse(c.text.trim());
+      return parsed ?? original.valueOf(f);
+    }
 
-  void _showEditSheet(BuildContext context, BodyMeasurementModel m) {
-    final heightCtrl = TextEditingController(text: m.height.toString());
-    final chestCtrl = TextEditingController(text: m.chest.toString());
-    final waistCtrl = TextEditingController(text: m.waist.toString());
-    final shoulderCtrl = TextEditingController(text: m.shoulder.toString());
-    final hipsCtrl = TextEditingController(text: m.hips.toString());
-    final sleeveCtrl = TextEditingController(text: m.sleevLength.toString());
-    final inseamCtrl = TextEditingController(text: m.inseam.toString());
-    final neckCtrl = TextEditingController(text: m.neck.toString());
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          constraints:
-              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
-          decoration: BoxDecoration(
-            color: Theme.of(ctx).scaffoldBackgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Edit Measurements', style: AppTextStyles.h4),
-              Text(
-                'All values in cm',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.lightTextSecondary),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _Field(ctrl: heightCtrl, label: 'Height'),
-                      _Field(ctrl: chestCtrl, label: 'Chest'),
-                      _Field(ctrl: waistCtrl, label: 'Waist'),
-                      _Field(ctrl: shoulderCtrl, label: 'Shoulder'),
-                      _Field(ctrl: hipsCtrl, label: 'Hips'),
-                      _Field(ctrl: sleeveCtrl, label: 'Sleeve Length'),
-                      _Field(ctrl: inseamCtrl, label: 'Inseam'),
-                      _Field(ctrl: neckCtrl, label: 'Neck'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Obx(() => SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: MeasurementController.to.isLoading.value
-                          ? null
-                          : () async {
-                              final updated = BodyMeasurementModel(
-                                id: m.id,
-                                userId: m.userId,
-                                height: double.tryParse(heightCtrl.text) ?? m.height,
-                                chest: double.tryParse(chestCtrl.text) ?? m.chest,
-                                waist: double.tryParse(waistCtrl.text) ?? m.waist,
-                                shoulder:
-                                    double.tryParse(shoulderCtrl.text) ?? m.shoulder,
-                                hips: double.tryParse(hipsCtrl.text) ?? m.hips,
-                                sleevLength:
-                                    double.tryParse(sleeveCtrl.text) ?? m.sleevLength,
-                                inseam: double.tryParse(inseamCtrl.text) ?? m.inseam,
-                                neck: double.tryParse(neckCtrl.text) ?? m.neck,
-                                aiAccuracyScore: m.aiAccuracyScore,
-                                isAiGenerated: m.isAiGenerated,
-                                measuredAt: m.measuredAt,
-                              );
-                              await MeasurementController.to.updateMeasurement(updated);
-                              Navigator.pop(ctx);
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: AppRadius.medium,
-                        ),
-                      ),
-                      child: MeasurementController.to.isLoading.value
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(
-                              'Update',
-                              style: AppTextStyles.labelLarge
-                                  .copyWith(color: Colors.white),
-                            ),
-                    ),
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MeasurementChip extends StatelessWidget {
-  final String label;
-  final double value;
-  const _MeasurementChip({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: const BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: AppRadius.small,
-      ),
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.lightTextSecondary),
-            ),
-            TextSpan(
-              text: '${value.toStringAsFixed(1)} cm',
-              style:
-                  AppTextStyles.labelSmall.copyWith(color: AppColors.primary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Field extends StatelessWidget {
-  final TextEditingController ctrl;
-  final String label;
-  const _Field({required this.ctrl, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
-        controller: ctrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(
-          labelText: label,
-          suffixText: 'cm',
-          border: const OutlineInputBorder(borderRadius: AppRadius.medium),
-        ),
-      ),
+    return original.copyWith(
+      height: val(MeasurementField.height),
+      chest: val(MeasurementField.chest),
+      waist: val(MeasurementField.waist),
+      shoulder: val(MeasurementField.shoulder),
+      hips: val(MeasurementField.hips),
+      sleevLength: val(MeasurementField.sleeveLength),
+      inseam: val(MeasurementField.inseam),
+      neck: val(MeasurementField.neck),
+      wrist: val(MeasurementField.wrist),
+      shirtLength: val(MeasurementField.shirtLength),
+      outseam: val(MeasurementField.outseam),
+      thigh: val(MeasurementField.thigh),
+      knee: val(MeasurementField.knee),
+      bottomWidth: val(MeasurementField.bottomWidth),
+      trouserLength: val(MeasurementField.trouserLength),
     );
   }
 }

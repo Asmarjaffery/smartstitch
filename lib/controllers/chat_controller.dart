@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
@@ -181,6 +180,105 @@ class ChatController extends GetxController {
       isLoading.value = false;
     }
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // PERSONAL INFO / CONTACT SHARING FILTER
+  // ─────────────────────────────────────────────────────────────
+  // Sirf order-related conversation allow hoti hai. Phone numbers, emails,
+  // WhatsApp/Instagram/Facebook/Telegram handles waghera share karna block hai.
+
+  static final RegExp _phoneRegex = RegExp(
+    r'(\+?\d[\d\-\.\s]{6,}\d)',
+  );
+
+  static final RegExp _emailRegex = RegExp(
+    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+  );
+
+  // House/street/plot type numbering — e.g. "house # 123", "street 12",
+  // "plot no 45", "ghar 23", "block b 12" — strong signal of an address.
+  static final RegExp _addressNumberRegex = RegExp(
+    r'\b(house|ghar|street|gali|block|sector|plot|flat|apartment|road|mohalla)\b[^\d]{0,10}\d+',
+    caseSensitive: false,
+  );
+
+  static const List<String> _personalInfoKeywords = [
+    // contact platforms
+    'whatsapp',
+    'whats app',
+    'whats-app',
+    'insta',
+    'instagram',
+    'facebook',
+    'fb id',
+    'fb account',
+    'telegram',
+    'snapchat',
+    'snap id',
+    'imo',
+    'phone number',
+    'mobile number',
+    'cell number',
+    'contact number',
+    'my number',
+    'personal number',
+    'call me',
+    'call on',
+    'call at',
+    'add me on',
+    'add me at',
+    'text me',
+    'dm me',
+    'reach me',
+    'personal email',
+    'gmail id',
+    'skype',
+    'linkedin',
+    // address / location sharing
+    'my address',
+    'home address',
+    'ghar ka address',
+    'ghar ka pata',
+    'ghar ka pata',
+    'mera pata',
+    'mera address',
+    'come to my house',
+    'aa jao ghar',
+    'ghar aa jao',
+    'meet me at',
+    'mil lo',
+    'directly ghar',
+    'house no',
+    'house number',
+    'street no',
+    'street number',
+    'plot no',
+    'sector no',
+    'block no',
+    'nearby landmark',
+    'landmark hai',
+    'send location',
+    'location bhej',
+    'live location',
+  ];
+
+  /// Returns true agar text mein koi personal contact info (phone, email,
+  /// social handle) ya personal/home address detect ho. Sirf order/booking
+  /// ke through official address share honi chahiye, direct chat mein nahi.
+  bool containsPersonalInfo(String text) {
+    if (text.trim().isEmpty) return false;
+    final lower = text.toLowerCase();
+
+    if (_phoneRegex.hasMatch(text)) return true;
+    if (_emailRegex.hasMatch(text)) return true;
+    if (_addressNumberRegex.hasMatch(text)) return true;
+
+    for (final keyword in _personalInfoKeywords) {
+      if (lower.contains(keyword)) return true;
+    }
+    return false;
+  }
+
   // ─────────────────────────────────────────────────────────────
   // SEND TEXT MESSAGE
   // ─────────────────────────────────────────────────────────────
@@ -192,6 +290,14 @@ class ChatController extends GetxController {
     final roomId = currentRoomId.value;
     if (roomId.isEmpty) {
       AppHelpers.showError('Chat not ready, please wait');
+      return;
+    }
+
+    // 🔒 Personal info / contact / address sharing block
+    if (containsPersonalInfo(text)) {
+      AppHelpers.showError(
+        'Personal number, address ya contact detail share karna allowed nahi hai. Sirf order se related baat karein.',
+      );
       return;
     }
 
@@ -362,65 +468,6 @@ class ChatController extends GetxController {
       return false;
     }
   }
-  // ─────────────────────────────────────────────────────────────
-  // SEND LOCATION
-  // ─────────────────────────────────────────────────────────────
-
-  Future<void> sendLocation(String receiverId) async {
-    final roomId = currentRoomId.value;
-    if (roomId.isEmpty) {
-      AppHelpers.showError('Chat not ready, please wait');
-      return;
-    }
-
-    try {
-      // Location service on hai ya nahi check karo
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        AppHelpers.showError('Please enable location services');
-        return;
-      }
-
-      // Permission check
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          AppHelpers.showError('Location permission denied');
-          return;
-        }
-      }
-      if (permission == LocationPermission.deniedForever) {
-        AppHelpers.showError(
-            'Location permission permanently denied. Enable it from settings.');
-        return;
-      }
-
-      isSending.value = true;
-
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      await _chatService.sendMessage(
-        ChatMessageModel(
-          id: '',
-          chatRoomId: roomId,
-          senderId: myId,
-          receiverId: receiverId,
-          type: MessageType.location,
-          latitude: position.latitude,
-          longitude: position.longitude,
-          sentAt: DateTime.now(),
-        ),
-      );
-    } catch (e) {
-      AppHelpers.showError('Failed to share location');
-    } finally {
-      isSending.value = false;
-    }
-  }
-
   Future<void> cancelRecording() async {
     await _recorder.cancel();
     isRecording.value = false;

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/models/body_measurement_model.dart';
 import 'package:smartstitch/models/order_model.dart';
+import 'package:smartstitch/models/refund_model.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
 import 'package:smartstitch/services/firebase_service.dart';
@@ -19,6 +20,7 @@ class OrderController extends GetxController {
   final Rx<OrderModel?> selectedOrder = Rx<OrderModel?>(null);
   final RxBool isLoading = false.obs;
   final RxString filterStatus = 'all'.obs;
+  final RxString debugInfo = ''.obs; // 🔍 Debug tracking
 
   final Rx<BodyMeasurementModel?> selectedOrderMeasurement =
       Rx<BodyMeasurementModel?>(null);
@@ -31,6 +33,9 @@ class OrderController extends GetxController {
 
   final Rx<Map<String, dynamic>?> riderLocation =
       Rx<Map<String, dynamic>?>(null);
+
+  final Rx<RefundRequestModel?> selectedRefundRequest =
+      Rx<RefundRequestModel?>(null);
 
   List<OrderModel> get filteredOrders {
     switch (filterStatus.value) {
@@ -66,66 +71,112 @@ class OrderController extends GetxController {
   void onInit() {
     super.onInit();
     ever(AuthController.to.currentUser, (user) {
-      if (user != null) loadOrders();
+      if (user != null) {
+        debugPrint('🔄 Auth user changed, reloading orders...');
+        loadOrders();
+      }
     });
-    if (AuthController.to.currentUser.value != null) loadOrders();
+    if (AuthController.to.currentUser.value != null) {
+      debugPrint('✅ User already logged in, loading orders on init');
+      loadOrders();
+    } else {
+      debugPrint('⚠️ No user on init, skipping loadOrders');
+    }
   }
 
   Future<void> loadOrders() async {
     try {
       isLoading.value = true;
       final uid = AuthController.to.currentUserId;
-      if (uid == null) return;
+      
+      // 🔍 DEBUG: Log the UID we're querying with
+      debugPrint('📋 ===== LOADORDERS DEBUG =====');
+      debugPrint('🔑 Current UID: $uid');
+      
+      if (uid == null || uid.isEmpty) {
+        debugPrint('❌ UID is null or empty! Cannot query bookings.');
+        debugInfo.value = 'UID is null. Please login.';
+        myOrders.value = [];
+        isLoading.value = false;
+        AppHelpers.showError('Please login to see orders');
+        return;
+      }
+
+      debugPrint('🔍 Querying bookings collection for customerId: $uid');
 
       final bookingSnap = await _firebaseService.firestore
           .collection('bookings')
           .where('customerId', isEqualTo: uid)
           .get();
 
+      debugPrint('📊 Query returned ${bookingSnap.docs.length} documents');
+
+      if (bookingSnap.docs.isEmpty) {
+        debugPrint('⚠️ No bookings found for this UID');
+        debugInfo.value = 'No bookings found for UID: $uid';
+        myOrders.value = [];
+        isLoading.value = false;
+        return;
+      }
+
       final now = DateTime.now().toIso8601String();
       final bookingOrders = <OrderModel>[];
+      int successCount = 0;
+      int errorCount = 0;
 
       for (final doc in bookingSnap.docs) {
         try {
           final d = doc.data();
 
+          debugPrint('📄 Processing booking: ${doc.id}');
+          debugPrint('   Status: ${d['status']} | Service: ${d['serviceTitle']}');
+
+          // ────────── Status Conversion ──────────
           OrderStatus orderStatus;
           try {
             orderStatus = OrderStatus.values.byName(d['status'] ?? 'pending');
-          } catch (_) {
+          } catch (e) {
+            debugPrint('   ⚠️ Status parsing failed: $e, defaulting to pending');
             orderStatus = OrderStatus.pending;
           }
 
+          // ────────── Timestamp Handling ──────────
           String placedAt = now;
           if (d['createdAt'] != null) {
             try {
               DateTime.parse(d['createdAt']);
               placedAt = d['createdAt'];
-            } catch (_) {
+            } catch (e) {
+              debugPrint('   ⚠️ createdAt parse failed: $e');
               placedAt = now;
             }
           }
 
           String updatedAt = now;
           if (d['updatedAt'] != null) {
-            updatedAt = d['updatedAt'].toString();
+            try {
+              updatedAt = d['updatedAt'].toString();
+            } catch (e) {
+              debugPrint('   ⚠️ updatedAt parse failed: $e');
+              updatedAt = now;
+            }
           }
 
-          // ── Amount breakdown ──────────────────────────────────────
+          // ────────── Amount Breakdown ──────────
           final servicePrice = (d['servicePrice'] as num?)?.toDouble() ?? 0.0;
           final deliveryFee = (d['deliveryFee'] as num?)?.toDouble() ?? 0.0;
-          // If totalAmount already stored in Firestore, use it; else compute
           final totalAmount = (d['totalAmount'] as num?)?.toDouble() ??
               (servicePrice + deliveryFee);
-          // platformCommission is 10% of service price only (not delivery)
           final platformCommission =
               (d['platformCommission'] as num?)?.toDouble() ??
                   (servicePrice * 0.15);
-
           final artistAmount =
               (d['artistAmount'] as num?)?.toDouble() ?? (servicePrice * 0.85);
-          // ──────────────────────────────────────────────────────────
 
+          debugPrint(
+              '   💰 Amount: Rs$totalAmount (Service: Rs$servicePrice + Delivery: Rs$deliveryFee)');
+
+          // ────────── Create OrderModel ──────────
           final order = OrderModel.fromJson({
             'id': doc.id,
             'customerId': d['customerId'] ?? '',
@@ -194,18 +245,32 @@ class OrderController extends GetxController {
                 d['designImageUrl'] != null ? [d['designImageUrl']] : [],
             'payment': null,
           });
+
           bookingOrders.add(order);
-        } catch (e) {
-          debugPrint('Parse error for ${doc.id}: $e');
+          successCount++;
+          debugPrint('   ✅ Order added successfully');
+        } catch (e, stack) {
+          errorCount++;
+          debugPrint('   ❌ Parse error for ${doc.id}: $e');
+          debugPrintStack(stackTrace: stack);
         }
       }
 
       myOrders.value = bookingOrders;
       myOrders.sort((a, b) => b.placedAt.compareTo(a.placedAt));
-    } catch (e) {
-      debugPrint('loadOrders error: $e');
+
+      debugInfo.value =
+          '✅ Loaded $successCount orders ($errorCount errors) | UID: $uid';
+      debugPrint('✅ FINAL: Loaded $successCount orders with $errorCount errors');
+      debugPrint('📋 ===== END DEBUG =====\n');
+    } catch (e, stack) {
+      debugPrint('❌ loadOrders CRITICAL error: $e');
+      debugPrintStack(stackTrace: stack);
+      debugInfo.value = '❌ Error: $e';
+      myOrders.value = [];
+
       if (Get.context != null) {
-        AppHelpers.showError('Failed to load orders.');
+        AppHelpers.showError('Failed to load orders: $e');
       }
     } finally {
       isLoading.value = false;
@@ -221,8 +286,10 @@ class OrderController extends GetxController {
     selectedRiderName.value = '';
     selectedRiderPhone.value = '';
     riderLocation.value = null;
+    selectedRefundRequest.value = null;
 
-    if (order.measurementId != null) {
+    // ────────── Load Measurement ──────────
+    if (order.measurementId != null && order.measurementId!.isNotEmpty) {
       try {
         final doc = await _firebaseService.firestore
             .collection('measurements')
@@ -231,31 +298,40 @@ class OrderController extends GetxController {
         if (doc.exists) {
           selectedOrderMeasurement.value =
               BodyMeasurementModel.fromJson({...doc.data()!, 'id': doc.id});
+          debugPrint('✅ Measurement loaded: ${order.measurementId}');
+        } else {
+          debugPrint('⚠️ Measurement doc not found: ${order.measurementId}');
         }
       } catch (e) {
-        debugPrint('Measurement fetch error: $e');
+        debugPrint('❌ Measurement fetch error: $e');
         selectedOrderMeasurement.value = null;
       }
     }
 
-    try {
-      final artistDoc = await _firebaseService.firestore
-          .collection('users')
-          .doc(order.artistId)
-          .get();
-      if (artistDoc.exists) {
-        final data = artistDoc.data()!;
-        selectedOrderArtistName.value =
-            data['name'] ?? data['displayName'] ?? 'Unknown Artist';
-        selectedOrderArtistPhone.value = data['phone'] ?? '';
-      } else {
+    // ────────── Load Artist Info ──────────
+    if (order.artistId.isNotEmpty) {
+      try {
+        final artistDoc = await _firebaseService.firestore
+            .collection('users')
+            .doc(order.artistId)
+            .get();
+        if (artistDoc.exists) {
+          final data = artistDoc.data()!;
+          selectedOrderArtistName.value =
+              data['name'] ?? data['displayName'] ?? 'Unknown Artist';
+          selectedOrderArtistPhone.value = data['phone'] ?? '';
+          debugPrint('✅ Artist loaded: ${selectedOrderArtistName.value}');
+        } else {
+          debugPrint('⚠️ Artist doc not found: ${order.artistId}');
+          selectedOrderArtistName.value = 'Unknown Artist';
+        }
+      } catch (e) {
+        debugPrint('❌ Artist fetch error: $e');
         selectedOrderArtistName.value = 'Unknown Artist';
       }
-    } catch (e) {
-      debugPrint('Artist fetch error: $e');
-      selectedOrderArtistName.value = 'Unknown Artist';
     }
 
+    // ────────── Load Rider Info ──────────
     if (order.riderId != null && order.riderId!.isNotEmpty) {
       try {
         final riderDoc = await _firebaseService.firestore
@@ -267,21 +343,47 @@ class OrderController extends GetxController {
           selectedRiderName.value =
               data['name'] ?? data['displayName'] ?? 'Unknown Rider';
           selectedRiderPhone.value = data['phone'] ?? '';
+          debugPrint('✅ Rider loaded: ${selectedRiderName.value}');
         } else {
+          debugPrint('⚠️ Rider doc not found: ${order.riderId}');
           selectedRiderName.value = 'Unknown Rider';
         }
       } catch (e) {
-        debugPrint('Rider fetch error: $e');
+        debugPrint('❌ Rider fetch error: $e');
         selectedRiderName.value = 'Unknown Rider';
-        selectedRiderPhone.value = '';
       }
+    }
+
+    // ────────── Load Refund Request ──────────
+    if (order.status == OrderStatus.cancelled) {
+      await _loadRefundRequest(order.id);
     }
   }
 
-  // ── Live rider location ──
+  Future<void> _loadRefundRequest(String orderId) async {
+    try {
+      final refundDoc = await _firebaseService.firestore
+          .collection('refundRequests')
+          .doc(orderId)
+          .get();
+
+      if (refundDoc.exists) {
+        selectedRefundRequest.value = RefundRequestModel.fromJson(
+            {...refundDoc.data()!, 'orderId': orderId});
+        debugPrint('✅ Refund request loaded for: $orderId');
+      } else {
+        debugPrint('ℹ️ No refund request for: $orderId');
+        selectedRefundRequest.value = null;
+      }
+    } catch (e) {
+      debugPrint('❌ Refund request fetch error: $e');
+      selectedRefundRequest.value = null;
+    }
+  }
 
   void listenToOrder(String orderId) {
     _orderLocationSub?.cancel();
+    debugPrint('👂 Listening to order updates: $orderId');
     _orderLocationSub = _firebaseService.firestore
         .collection('bookings')
         .doc(orderId)
@@ -290,6 +392,10 @@ class OrderController extends GetxController {
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
         riderLocation.value = data['riderLocation'] as Map<String, dynamic>?;
+        if (riderLocation.value != null) {
+          debugPrint(
+              '📍 Rider location updated: ${riderLocation.value}');
+        }
       }
     });
   }
@@ -303,6 +409,7 @@ class OrderController extends GetxController {
   Future<void> cancelOrder(String orderId) async {
     try {
       isLoading.value = true;
+      debugPrint('🚫 Cancelling order: $orderId');
 
       final orderDoc = await _firebaseService.firestore
           .collection('orders')
@@ -310,6 +417,7 @@ class OrderController extends GetxController {
           .get();
 
       final collection = orderDoc.exists ? 'orders' : 'bookings';
+      debugPrint('   Collection detected: $collection');
 
       final data = orderDoc.exists
           ? orderDoc.data()!
@@ -338,9 +446,117 @@ class OrderController extends GetxController {
 
       AppHelpers.showSuccess('Booking cancelled.');
       await loadOrders();
+      debugPrint('✅ Order cancelled successfully');
     } catch (e) {
-      debugPrint('Cancel error: $e');
-      AppHelpers.showError('Failed to cancel.');
+      debugPrint('❌ Cancel error: $e');
+      AppHelpers.showError('Failed to cancel: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> requestRefund(
+    String orderId,
+    CancellationReason reason,
+    String description,
+  ) async {
+    try {
+      isLoading.value = true;
+      debugPrint('💰 Requesting refund for: $orderId');
+
+      final bookingSnap = await _firebaseService.firestore
+          .collection('bookings')
+          .doc(orderId)
+          .get();
+
+      if (!bookingSnap.exists) {
+        AppHelpers.showError('Order not found.');
+        return;
+      }
+
+      final bookingData = bookingSnap.data()!;
+      final customerId = bookingData['customerId'] ?? '';
+      final tailorId = bookingData['artistId'] ?? '';
+      final paymentIntentId = bookingData['paymentIntentId'] ?? '';
+
+      String customerName = 'Customer';
+      String tailorName = 'Tailor';
+
+      try {
+        if (customerId.toString().isNotEmpty) {
+          final customerDoc = await _firebaseService.firestore
+              .collection('users')
+              .doc(customerId)
+              .get();
+          if (customerDoc.exists) {
+            final cd = customerDoc.data()!;
+            customerName = cd['name'] ?? cd['displayName'] ?? 'Customer';
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Customer name fetch error: $e');
+      }
+
+      try {
+        if (tailorId.toString().isNotEmpty) {
+          final tailorDoc = await _firebaseService.firestore
+              .collection('users')
+              .doc(tailorId)
+              .get();
+          if (tailorDoc.exists) {
+            final td = tailorDoc.data()!;
+            tailorName = td['name'] ?? td['displayName'] ?? 'Tailor';
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Tailor name fetch error: $e');
+      }
+
+      final refundRequest = RefundRequestModel(
+        orderId: orderId,
+        customerId: customerId,
+        tailorId: tailorId,
+        paymentIntentId: paymentIntentId,
+        cancellationReason: reason,
+        cancellationDescription: description,
+        refundStatus: RefundStatus.requested,
+        customerName: customerName,
+        tailorName: tailorName,
+        paidAmount: (bookingData['totalAmount'] as num?)?.toDouble() ?? 0.0,
+        bookingStatus: 'cancelled',
+      );
+
+      await _firebaseService.firestore
+          .collection('refundRequests')
+          .doc(orderId)
+          .set(refundRequest.toCreateJson());
+
+      await _firebaseService.firestore
+          .collection('bookings')
+          .doc(orderId)
+          .update({
+        'refundRequested': true,
+        'refundRequestedAt': DateTime.now().toIso8601String(),
+      });
+
+      if (tailorId.isNotEmpty) {
+        await NotificationService.instance.sendNotification(
+          recipientId: tailorId,
+          recipientRole: UserRole.artist,
+          type: NotificationType.orderUpdate,
+          title: 'Refund Requested',
+          body: 'Customer ne refund ki request ki hai: $orderId',
+          data: {'orderId': orderId, 'action': 'refundRequest'},
+        );
+      }
+
+      AppHelpers.showSuccess('Refund request submitted.');
+      await loadOrders();
+      await _loadRefundRequest(orderId);
+      debugPrint('✅ Refund request submitted successfully');
+    } catch (e) {
+      debugPrint('❌ Refund request error: $e');
+      AppHelpers.showError('Failed to submit refund request: $e');
     } finally {
       isLoading.value = false;
     }
@@ -348,10 +564,12 @@ class OrderController extends GetxController {
 
   void setFilter(String status) {
     filterStatus.value = status;
+    debugPrint('🔍 Filter changed to: $status');
   }
 
   void removeOrderFromList(String orderId) {
     myOrders.removeWhere((o) => o.id == orderId);
+    debugPrint('🗑️ Order removed from list: $orderId');
   }
 
   bool canCancel(OrderStatus status) =>

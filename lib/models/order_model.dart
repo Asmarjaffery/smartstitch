@@ -29,6 +29,15 @@ class OrderModel {
   final String? measurementId;
   final Map<String, dynamic>? riderLocation;
 
+  // ─── Cancellation & Refund Management ─────────────────────────────────
+  final PaymentStatus paymentStatus;
+  final String? paymentIntentId;
+  final RefundStatus? refundStatus;
+  final String? rejectionReason;
+  final CancellationReason? cancellationReason;
+  final String? cancellationDescription;
+  final DateTime? refundedAt;
+
   const OrderModel({
     required this.id,
     required this.customerId,
@@ -53,12 +62,67 @@ class OrderModel {
     required this.updatedAt,
     this.measurementId,
     this.riderLocation,
+    this.paymentStatus = PaymentStatus.pending,
+    this.paymentIntentId,
+    this.refundStatus,
+    this.rejectionReason,
+    this.cancellationReason,
+    this.cancellationDescription,
+    this.refundedAt,
   });
+
+  /// True only for bookings the Cancellation & Refund feature considers
+  /// "paid" — i.e. eligible to auto-create a refund request on cancel.
+  bool get isPaid => paymentStatus == PaymentStatus.completed;
 
   static double calcCommission(double total) => total * 0.10;
   static double calcArtistAmount(double total) => total * 0.90;
 
   AddressModel get address => deliveryAddress;
+
+  OrderModel copyWith({
+    OrderStatus? status,
+    PaymentStatus? paymentStatus,
+    RefundStatus? refundStatus,
+    String? rejectionReason,
+    CancellationReason? cancellationReason,
+    String? cancellationDescription,
+    DateTime? refundedAt,
+  }) {
+    return OrderModel(
+      id: id,
+      customerId: customerId,
+      artistId: artistId,
+      riderId: riderId,
+      service: service,
+      measurements: measurements,
+      designImages: designImages,
+      specialInstructions: specialInstructions,
+      deliveryAddress: deliveryAddress,
+      isHomeVisit: isHomeVisit,
+      appointmentDate: appointmentDate,
+      status: status ?? this.status,
+      servicePrice: servicePrice,
+      deliveryFee: deliveryFee,
+      totalAmount: totalAmount,
+      platformCommission: platformCommission,
+      artistAmount: artistAmount,
+      payment: payment,
+      estimatedDelivery: estimatedDelivery,
+      placedAt: placedAt,
+      updatedAt: updatedAt,
+      measurementId: measurementId,
+      riderLocation: riderLocation,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentIntentId: paymentIntentId,
+      refundStatus: refundStatus ?? this.refundStatus,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      cancellationDescription:
+          cancellationDescription ?? this.cancellationDescription,
+      refundedAt: refundedAt ?? this.refundedAt,
+    );
+  }
 
   factory OrderModel.fromJson(Map<String, dynamic> json) => OrderModel(
         id: json['id'] as String,
@@ -94,7 +158,43 @@ class OrderModel {
         updatedAt: DateTime.parse(json['updatedAt'] as String),
         measurementId: json['measurementId'] as String?,
         riderLocation: json['riderLocation'] as Map<String, dynamic>?,
+        paymentStatus: _parsePaymentStatus(json['paymentStatus']),
+        paymentIntentId: json['paymentIntentId'] as String?,
+        refundStatus: _parseRefundStatus(json['refundStatus']),
+        rejectionReason: json['rejectionReason'] as String?,
+        cancellationReason: _parseCancellationReason(json['cancellationReason']),
+        cancellationDescription: json['cancellationDescription'] as String?,
+        refundedAt: json['refundedAt'] != null
+            ? DateTime.tryParse(json['refundedAt'].toString())
+            : null,
       );
+
+  static PaymentStatus _parsePaymentStatus(dynamic value) {
+    if (value is String) {
+      try {
+        return PaymentStatus.values.byName(value);
+      } catch (_) {}
+    }
+    return PaymentStatus.pending;
+  }
+
+  static RefundStatus? _parseRefundStatus(dynamic value) {
+    if (value is String) {
+      try {
+        return RefundStatus.values.byName(value);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static CancellationReason? _parseCancellationReason(dynamic value) {
+    if (value is String) {
+      try {
+        return CancellationReason.values.byName(value);
+      } catch (_) {}
+    }
+    return null;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -120,5 +220,12 @@ class OrderModel {
         'updatedAt': updatedAt.toIso8601String(),
         'measurementId': measurementId,
         'riderLocation': riderLocation,
+        'paymentStatus': paymentStatus.name,
+        'paymentIntentId': paymentIntentId,
+        'refundStatus': refundStatus?.name,
+        'rejectionReason': rejectionReason,
+        'cancellationReason': cancellationReason?.name,
+        'cancellationDescription': cancellationDescription,
+        'refundedAt': refundedAt?.toIso8601String(),
       };
 }

@@ -135,7 +135,20 @@ class StripeService {
         final status = statusRes.data['status'] as String?;
 
         if (status == 'paid') {
-          return StripePaymentResult(success: true, transactionId: sessionId);
+          // The Checkout Session id (sessionId, "cs_...") is NOT usable for
+          // refunds — refunds need the actual PaymentIntent id ("pi_...").
+          // The backend's /api/stripe/session-status endpoint should return
+          // that as `paymentIntentId` (from Stripe's
+          // session.payment_intent field) once the session is paid. Until
+          // that backend change ships, this falls back to sessionId so the
+          // booking still completes — but refunds on web-originated
+          // bookings won't work until the backend is updated.
+          final piFromBackend =
+              statusRes.data['paymentIntentId'] as String?;
+          return StripePaymentResult(
+            success: true,
+            transactionId: piFromBackend ?? sessionId,
+          );
         }
       }
 

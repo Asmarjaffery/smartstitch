@@ -8,12 +8,14 @@ import 'package:smartstitch/models/artist_model.dart';
 import 'package:smartstitch/models/body_measurement_model.dart';
 import 'package:smartstitch/models/booking_model.dart';
 import 'package:smartstitch/models/enums.dart';
+import 'package:smartstitch/models/refund_model.dart';
 import 'package:smartstitch/models/service_model.dart';
 import 'package:smartstitch/models/address_model.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
 import 'package:smartstitch/services/brevo_service.dart';
 import 'package:smartstitch/services/firebase_service.dart';
 import 'package:smartstitch/services/notification_service.dart';
+import 'package:smartstitch/services/refund_service.dart';
 import 'package:smartstitch/services/strip_service.dart';
 import 'package:smartstitch/user/booking/booking_confirm_screen.dart';
 import 'package:uuid/uuid.dart';
@@ -33,7 +35,12 @@ class BookingController extends GetxController {
   final Rx<DateTime?> selectedDate = Rx<DateTime?>(null);
   final RxString selectedTimeSlot = ''.obs;
   final RxBool isHomeVisit = false.obs;
-  final RxString designImageUrl = ''.obs;
+
+  /// Every design image the customer uploads for this booking. Each image
+  /// adds a flat Rs 200 to the total (see [designImageFee]) — 1 image =
+  /// Rs 200, 2 images = Rs 400, 3 = Rs 600, and so on.
+  final RxList<String> designImageUrls = <String>[].obs;
+
   final RxString specialInstructions = ''.obs;
   final RxBool isLoading = false.obs;
   final RxBool isUploadingImage = false.obs;
@@ -48,6 +55,12 @@ class BookingController extends GetxController {
 
   final Rx<BookingModel?> lastBooking = Rx<BookingModel?>(null);
 
+  // ─── Cancellation & Refund state ─────────────────────────────────────
+  // Tracks which booking id(s) currently have a cancellation in flight so
+  // the "Cancel Booking" button can show a per-card loading state instead
+  // of a global spinner.
+  final RxSet<String> cancellingBookingIds = <String>{}.obs;
+
   final List<String> timeSlots = [
     '09:00 AM',
     '10:00 AM',
@@ -58,6 +71,16 @@ class BookingController extends GetxController {
     '04:00 PM',
     '05:00 PM',
   ];
+
+  // ─── Extra charges ────────────────────────────────────────────────────
+  // Har design image pe Rs 200 charge — 1 image = 200, 2 = 400, 3 = 600...
+  double get designImageFee => designImageUrls.length * 200.0;
+
+  // Special instructions diye hain to flat Rs 200 extra.
+  double get specialInstructionsFee =>
+      specialInstructions.value.trim().isNotEmpty ? 200.0 : 0.0;
+
+  double get extraChargesFee => designImageFee + specialInstructionsFee;
 
   @override
   void onInit() {
@@ -228,6 +251,10 @@ class BookingController extends GetxController {
     selectedTimeSlot.value = slot;
   }
 
+  /// Uploads one design image and appends it to [designImageUrls]. Every
+  /// additional image the customer uploads increases [designImageFee] by
+  /// another flat Rs 200 (handled automatically since the fee is derived
+  /// from the list length).
   Future<void> uploadDesignImage() async {
     try {
       final XFile? image = await _picker.pickImage(
@@ -261,13 +288,22 @@ class BookingController extends GetxController {
         throw Exception('Upload failed: ${jsonData['error']?['message']}');
       }
 
-      designImageUrl.value = url;
-      AppHelpers.showSuccess('Design uploaded!');
+      designImageUrls.add(url);
+      AppHelpers.showSuccess(
+        'Design uploaded! Extra charge: Rs ${designImageFee.toInt()}',
+      );
     } catch (e) {
       uploadFailed.value = true;
       AppHelpers.showError('Failed to upload design.');
     } finally {
       isUploadingImage.value = false;
+    }
+  }
+
+  /// Removes one uploaded design image (and its Rs 200 charge) by index.
+  void removeDesignImage(int index) {
+    if (index >= 0 && index < designImageUrls.length) {
+      designImageUrls.removeAt(index);
     }
   }
 
@@ -298,6 +334,30 @@ class BookingController extends GetxController {
     return '${days[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 
+  /// Call this before navigating from the details/date-time step to the
+  /// Confirm Booking (step 3) screen. Shows an error and returns false if
+  /// anything required is missing, so the customer can't proceed to the
+  /// next step with an incomplete booking.
+  bool validateBeforeConfirm() {
+    if (selectedService.value == null) {
+      AppHelpers.showError('Please select a service first.');
+      return false;
+    }
+    if (selectedDate.value == null) {
+      AppHelpers.showError('Please select a date.');
+      return false;
+    }
+    if (selectedTimeSlot.value.isEmpty) {
+      AppHelpers.showError('Please select a time slot.');
+      return false;
+    }
+    if (isHomeVisit.value && selectedAddress.value == null) {
+      AppHelpers.showError('Please select an address for home visit.');
+      return false;
+    }
+    return true;
+  }
+
   Future<void> createBooking() async {
     if (selectedService.value == null) {
       AppHelpers.showError('Please select a service.');
@@ -313,6 +373,10 @@ class BookingController extends GetxController {
     }
     if (selectedTimeSlot.value.isEmpty) {
       AppHelpers.showError('Please select a time slot.');
+      return;
+    }
+    if (isHomeVisit.value && selectedAddress.value == null) {
+      AppHelpers.showError('Please select an address for home visit.');
       return;
     }
 
@@ -367,7 +431,18 @@ class BookingController extends GetxController {
 
       final basePrice = selectedService.value!.basePrice;
       final deliveryFee = isHomeVisit.value ? 200.0 : 0.0;
-      final totalAmount = basePrice + deliveryFee;
+      // Design-upload fee doubles with every extra image (1 img = 200,
+      // 2 = 400, 3 = 600, ...) and special instructions add a flat 200.
+      final designFee = designImageFee;
+      final instructionsFee = specialInstructionsFee;
+      final totalAmount =
+          basePrice + deliveryFee + designFee + instructionsFee;
+
+      // Populated only for Stripe bookings — used to power cancellation
+      // eligibility ("paid" bookings only) and to let the admin refund
+      // screen call the Vercel Stripe refund API against the right charge.
+      String paymentStatus = 'unpaid';
+      String paymentIntentId = '';
 
       if (selectedPaymentMethod.value == PaymentMethod.stripe) {
         final result = await StripeService.instance.makePayment(
@@ -384,6 +459,20 @@ class BookingController extends GetxController {
           isLoading.value = false;
           return;
         }
+
+        paymentStatus = 'paid';
+        // StripePaymentResult exposes the captured id as `transactionId`
+        // (see strip_service.dart) — on mobile this is the real
+        // PaymentIntent id (pi_...), on web (kIsWeb) it's currently the
+        // Checkout Session id (cs_...) unless the backend's
+        // /api/stripe/session-status endpoint has been updated to also
+        // return `paymentIntentId`, in which case strip_service.dart
+        // already prefers that value. Refunds need the pi_... value.
+        paymentIntentId = result.transactionId ?? '';
+      } else {
+        // Wallet payments are deducted synchronously before this point in
+        // the existing flow, so they're treated as paid immediately too.
+        paymentStatus = 'paid';
       }
 
       final booking = BookingModel(
@@ -403,7 +492,7 @@ class BookingController extends GetxController {
         timeSlot: selectedTimeSlot.value,
         address: isHomeVisit.value ? selectedAddress.value : null,
         designImageUrl:
-            designImageUrl.value.isNotEmpty ? designImageUrl.value : null,
+            designImageUrls.isNotEmpty ? designImageUrls.first : null,
         specialInstructions: specialInstructions.value.isNotEmpty
             ? specialInstructions.value
             : null,
@@ -412,14 +501,28 @@ class BookingController extends GetxController {
         updatedAt: DateTime.now(),
       );
 
+      final initialBookingStatusJson = booking.toJson();
+
       await _firebaseService.firestore.collection('bookings').doc(booking.id).set({
-        ...booking.toJson(),
+        ...initialBookingStatusJson,
         'address': isHomeVisit.value ? selectedAddress.value?.toJson() : null,
         'servicePrice': basePrice,
         'deliveryFee': deliveryFee,
+        'designImageUrls': designImageUrls,
+        'designImageFee': designFee,
+        'specialInstructionsFee': instructionsFee,
         'totalAmount': totalAmount,
         'platformCommission': (basePrice * 0.15).roundToDouble(),
         'artistAmount': (basePrice * 0.85).roundToDouble(),
+        'paymentStatus': paymentStatus,
+        'paymentIntentId': paymentIntentId,
+        // Mirrors whatever value the model's own `status` field starts
+        // life as, under the field name the cancellation/refund feature
+        // reads (see BookingDisplayStatusX.resolve in
+        // booking_status_badge.dart). Kept alongside `status` rather than
+        // replacing it, to avoid breaking other screens that already read
+        // `status`.
+        'bookingStatus': initialBookingStatusJson['status'] ?? 'confirmed',
       });
 
       await _firebaseService.firestore
@@ -475,6 +578,110 @@ class BookingController extends GetxController {
     }
   }
 
+  /// Full customer-facing cancellation flow for the Refund Management
+  /// feature. Call this after [showCancelBookingDialog] returns a result.
+  ///
+  /// - Sets `bookingStatus` (and legacy `status`) to `cancelled`.
+  /// - If the booking's `paymentStatus == 'paid'`, automatically creates a
+  ///   `refundRequests/{bookingId}` document and mirrors `refundStatus =
+  ///   'requested'` onto the booking so list screens can badge it without
+  ///   a second query.
+  /// - Customers never call a separate "request refund" action — this is
+  ///   the only path that creates a refund request.
+  Future<bool> cancelBookingWithRefund({
+    required String bookingId,
+    required String customerId,
+    required String tailorId,
+    required String paymentIntentId,
+    required String paymentStatus,
+    required double paidAmount,
+    required CancellationReason reason,
+    required String description,
+    String customerName = '',
+    String tailorName = '',
+  }) async {
+    if (cancellingBookingIds.contains(bookingId)) return false;
+
+    try {
+      cancellingBookingIds.add(bookingId);
+
+      final resolvedCustomerName = customerName.isNotEmpty
+          ? customerName
+          : await _resolveUserName(customerId);
+      final resolvedTailorName = tailorName.isNotEmpty
+          ? tailorName
+          : await _resolveUserName(tailorId);
+
+      final bookingRef =
+          _firebaseService.firestore.collection('bookings').doc(bookingId);
+      final isPaid = paymentStatus == 'paid';
+
+      final updateData = <String, dynamic>{
+        'bookingStatus': 'cancelled',
+        'status': AppointmentStatus.cancelled.name, // legacy field
+        'updatedAt': DateTime.now().toIso8601String(),
+        'cancellationReason': reason.name,
+        'cancellationDescription': description,
+      };
+
+      if (isPaid) {
+        updateData['refundStatus'] = RefundStatus.requested.name;
+      }
+
+      await bookingRef.update(updateData);
+
+      if (isPaid) {
+        final refundModel = RefundRequestModel(
+          orderId: bookingId,
+          customerId: customerId,
+          tailorId: tailorId,
+          paymentIntentId: paymentIntentId,
+          cancellationReason: reason,
+          cancellationDescription: description,
+          refundStatus: RefundStatus.requested,
+          customerName: resolvedCustomerName,
+          tailorName: resolvedTailorName,
+          paidAmount: paidAmount,
+          bookingStatus: 'cancelled',
+        );
+
+        await _firebaseService.firestore
+            .collection('refundRequests')
+            .doc(bookingId)
+            .set(refundModel.toCreateJson());
+
+        try {
+          await NotificationService.instance.sendNotification(
+            recipientId: tailorId,
+            recipientRole: UserRole.artist,
+            type: NotificationType.orderUpdate,
+            title: 'Booking Cancelled',
+            body: 'A paid booking was cancelled and a refund was requested.',
+            data: {'bookingId': bookingId},
+          );
+        } catch (_) {}
+      }
+
+      final index = myBookings.indexWhere((b) => b.id == bookingId);
+      if (index != -1) {
+        myBookings[index] =
+            myBookings[index].copyWith(status: AppointmentStatus.cancelled);
+      }
+
+      AppHelpers.showSuccess(
+        isPaid
+            ? 'Booking cancelled. Refund requested.'
+            : 'Booking cancelled.',
+      );
+      return true;
+    } catch (e) {
+      AppHelpers.showError('Failed to cancel booking. Please try again.');
+      return false;
+    } finally {
+      cancellingBookingIds.remove(bookingId);
+    }
+  }
+
   Future<void> cancelBooking(String bookingId) async {
     try {
       await _firebaseService.firestore
@@ -496,13 +703,34 @@ class BookingController extends GetxController {
     }
   }
 
+  /// Best-effort display name lookup for the `users` collection, tried
+  /// against a few common field names since the actual UserModel wasn't
+  /// available while wiring up this feature. Falls back to an empty
+  /// string (never throws) so it can never block cancellation.
+  Future<String> _resolveUserName(String uid) async {
+    if (uid.isEmpty) return '';
+    try {
+      final doc =
+          await _firebaseService.firestore.collection('users').doc(uid).get();
+      if (!doc.exists) return '';
+      final data = doc.data() ?? {};
+      for (final key in ['fullName', 'name', 'displayName', 'shopName']) {
+        final value = data[key];
+        if (value is String && value.trim().isNotEmpty) return value.trim();
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   void _resetForm() {
     selectedService.value = null;
     selectedDate.value = null;
     selectedTimeSlot.value = '';
     selectedAddress.value = null;
     isHomeVisit.value = false;
-    designImageUrl.value = '';
+    designImageUrls.clear();
     specialInstructions.value = '';
     selectedArtistId.value = '';
     selectedArtistCategoryId.value = '';

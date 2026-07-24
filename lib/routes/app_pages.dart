@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:smartstitch/admin/admin_bindings.dart';
 import 'package:smartstitch/admin/admin_main_screen.dart';
 import 'package:smartstitch/admin/review/admin_review_screen.dart';
+import 'package:smartstitch/admin/refunds/refund_requests_screen.dart';
 import 'package:smartstitch/artist/artist_bindings.dart';
 import 'package:smartstitch/artist/artist_main_screen.dart';
 import 'package:smartstitch/artist/design/design_screen.dart';
@@ -198,6 +199,10 @@ class AppPages {
     GetPage(
       name: AppRoutes.performanceScreen,
       page: () => const PerformanceScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.adminRefunds,
+      page: () => const RefundRequestsScreen(),
     ),
     // ─── Artist ─────────────────────────────────────────────
     GetPage(

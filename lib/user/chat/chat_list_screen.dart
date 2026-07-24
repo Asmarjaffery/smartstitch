@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -7,12 +8,44 @@ import '../../models/chat_room_model.dart';
 import '../../core/theme/app.theme.dart';
 import 'chat_room_screen.dart';
 
-class ChatListScreen extends StatelessWidget {
+class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
 
   @override
+  State<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+class _ChatListScreenState extends State<ChatListScreen> {
+  late final ChatController controller;
+  final TextEditingController _searchCtrl = TextEditingController();
+  final RxBool _isSearching = false.obs;
+  final RxString _query = ''.obs;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = Get.find<ChatController>();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    if (_isSearching.value) {
+      _isSearching.value = false;
+      _searchCtrl.clear();
+      _query.value = '';
+      FocusScope.of(context).unfocus();
+    } else {
+      _isSearching.value = true;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = Get.find<ChatController>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? AppColors.darkBackground : AppColors.lightBackground;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
@@ -20,6 +53,7 @@ class ChatListScreen extends StatelessWidget {
         isDark ? AppColors.darkSurface2 : AppColors.lightSurface2;
     final textPrimary =
         isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+    final textHint = isDark ? AppColors.darkTextHint : AppColors.lightTextHint;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
     return Scaffold(
@@ -30,37 +64,64 @@ class ChatListScreen extends StatelessWidget {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleSpacing: 16,
-        title: Text(
-          'Chats',
-          style: TextStyle(
-              fontWeight: FontWeight.w800, fontSize: 24, color: textPrimary),
-        ),
+        title: Obx(() => _isSearching.value
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                style: TextStyle(color: textPrimary, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Search artists...',
+                  hintStyle: TextStyle(color: textHint),
+                  border: InputBorder.none,
+                ),
+                onChanged: (v) => _query.value = v.trim(),
+              )
+            : Text(
+                'Chats',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 24,
+                    color: textPrimary),
+              )),
         actions: [
-          _RoundIconButton(
-            icon: Icons.search_rounded,
-            background: surfaceAlt,
-            iconColor: textPrimary,
-            onTap: () {},
-          ),
-          const SizedBox(width: 10),
-          _RoundIconButton(
-            icon: Icons.add_rounded,
-            background: AppColors.primary,
-            iconColor: Colors.white,
-            onTap: () => Get.toNamed('/user-discovery'),
-          ),
+          Obx(() => _RoundIconButton(
+                icon: _isSearching.value
+                    ? Icons.close_rounded
+                    : Icons.search_rounded,
+                background: surfaceAlt,
+                iconColor: textPrimary,
+                onTap: _toggleSearch,
+              )),
+          Obx(() => _isSearching.value
+              ? const SizedBox.shrink()
+              : Row(
+                  children: [
+                    const SizedBox(width: 10),
+                    _RoundIconButton(
+                      icon: Icons.add_rounded,
+                      background: AppColors.primary,
+                      iconColor: Colors.white,
+                      onTap: () => Get.toNamed('/user-discovery'),
+                    ),
+                  ],
+                )),
           const SizedBox(width: 12),
         ],
       ),
       body: Obx(() {
+        // ── SEARCH MODE: show matching artists only ─────────────────────
+        if (_isSearching.value) {
+          return _ArtistSearchResults(
+            query: _query.value,
+            controller: controller,
+          );
+        }
+
+        // ── DEFAULT MODE: all artists strip + existing chats ────────────
         if (controller.isLoading.value) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
-        }
-
-        if (controller.rooms.isEmpty) {
-          return const _EmptyState();
         }
 
         final onlineRooms =
@@ -68,38 +129,339 @@ class ChatListScreen extends StatelessWidget {
 
         return Column(
           children: [
-            // ─── Online Users Strip ───────────────────────────────────────
+            // ─── All Artists Strip (start a chat with anyone) ──────────
+            _AllArtistsStrip(controller: controller),
+
+            // ─── Online Users Strip ─────────────────────────────────────
             if (onlineRooms.isNotEmpty)
               _OnlineStrip(
                 onlineRooms: onlineRooms,
                 controller: controller,
               ),
 
-            // ─── Chat List ────────────────────────────────────────────────
+            // ─── Chat List ───────────────────────────────────────────────
             Expanded(
-              child: ListView.separated(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(top: 4),
-                itemCount: controller.rooms.length,
-                separatorBuilder: (_, __) => Divider(
-                  height: 1,
-                  indent: 82,
-                  endIndent: 16,
-                  color: border,
-                ),
-                itemBuilder: (context, index) {
-                  final room = controller.rooms[index];
-                  return _AnimatedChatTile(
-                    room: room,
-                    controller: controller,
-                    index: index,
-                  );
-                },
-              ),
+              child: controller.rooms.isEmpty
+                  ? const _EmptyState()
+                  : ListView.separated(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.only(top: 4),
+                      itemCount: controller.rooms.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        indent: 82,
+                        endIndent: 16,
+                        color: border,
+                      ),
+                      itemBuilder: (context, index) {
+                        final room = controller.rooms[index];
+                        return _AnimatedChatTile(
+                          room: room,
+                          controller: controller,
+                          index: index,
+                        );
+                      },
+                    ),
             ),
           ],
         );
       }),
+    );
+  }
+}
+
+// ─── All Artists Strip ─────────────────────────────────────────────────────
+// Har artist top pe dikhta hai taake user kisi se bhi seedha chat shuru kar sake.
+
+class _AllArtistsStrip extends StatelessWidget {
+  final ChatController controller;
+  const _AllArtistsStrip({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary =
+        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('artists').snapshots(),
+      builder: (context, snapshot) {
+        // 🔎 DEBUG: agar artists nahi dikh rahe to yeh line console mein
+        // asal wajah bata degi (permission-denied, wrong collection, etc.)
+        if (snapshot.hasError) {
+          debugPrint('❌ Artists strip error: ${snapshot.error}');
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Artists load nahi ho rahe: ${snapshot.error}',
+              style: const TextStyle(color: AppColors.error, fontSize: 12),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.primary),
+            ),
+          );
+        }
+
+        final allDocs = snapshot.data?.docs ?? [];
+        debugPrint('✅ Artists fetched: ${allDocs.length}');
+
+        if (allDocs.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Text(
+              'Koi artist available nahi hai abhi',
+              style: TextStyle(color: textPrimary.withValues(alpha: 0.6), fontSize: 13),
+            ),
+          );
+        }
+
+        // Apna khud ka artist doc (agar current user khud artist hai) exclude karo
+        final docs =
+            allDocs.where((d) => d.id != controller.myId).toList();
+
+        if (docs.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: border, width: 0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Text(
+                  'Artists',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: textPrimary,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 92,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final data = doc.data() as Map<String, dynamic>? ?? {};
+                    final name = (data['businessName'] ??
+                            data['name'] ??
+                            data['displayName'] ??
+                            'Artist')
+                        .toString();
+                    final image = (data['profileImageUrl'] ?? '').toString();
+
+                    return _ArtistQuickAvatar(
+                      artistId: doc.id,
+                      name: name,
+                      imageUrl: image,
+                      controller: controller,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ArtistQuickAvatar extends StatelessWidget {
+  final String artistId;
+  final String name;
+  final String imageUrl;
+  final ChatController controller;
+
+  const _ArtistQuickAvatar({
+    required this.artistId,
+    required this.name,
+    required this.imageUrl,
+    required this.controller,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary =
+        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+
+    return GestureDetector(
+      onTap: () async {
+        await controller.openChat(artistId);
+        Get.to(
+          () => ChatRoomScreen(
+            otherUserId: artistId,
+            roomName: name,
+            profileImageUrl: imageUrl.isNotEmpty ? imageUrl : null,
+          ),
+          transition: Transition.rightToLeft,
+          duration: const Duration(milliseconds: 300),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _UserAvatar(
+              imageUrl: imageUrl,
+              name: name,
+              radius: 27,
+              fontSize: 18,
+            ),
+            const SizedBox(height: 5),
+            SizedBox(
+              width: 60,
+              child: Text(
+                name.split(' ')[0],
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.caption.copyWith(
+                  color: textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Artist Search Results ─────────────────────────────────────────────────
+
+class _ArtistSearchResults extends StatelessWidget {
+  final String query;
+  final ChatController controller;
+
+  const _ArtistSearchResults({required this.query, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textHint = isDark ? AppColors.darkTextHint : AppColors.lightTextHint;
+    final textPrimary =
+        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('artists').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint('❌ Artist search error: ${snapshot.error}');
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Artists load nahi ho rahe: ${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.error, fontSize: 13),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
+        }
+
+        final allDocs = (snapshot.data?.docs ?? [])
+            .where((d) => d.id != controller.myId)
+            .toList();
+
+        final q = query.toLowerCase();
+        final results = q.isEmpty
+            ? allDocs
+            : allDocs.where((d) {
+                final data = d.data() as Map<String, dynamic>? ?? {};
+                final name = (data['businessName'] ??
+                        data['name'] ??
+                        data['displayName'] ??
+                        '')
+                    .toString();
+                return name.toLowerCase().contains(q);
+              }).toList();
+
+        if (results.isEmpty) {
+          return Center(
+            child: Text(
+              q.isEmpty ? 'Start typing to search artists' : 'No artist found',
+              style: TextStyle(color: textHint, fontSize: 14),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: results.length,
+          itemBuilder: (context, index) {
+            final doc = results[index];
+            final data = doc.data() as Map<String, dynamic>? ?? {};
+            final name = (data['businessName'] ??
+                    data['name'] ??
+                    data['displayName'] ??
+                    'Artist')
+                .toString();
+            final image = (data['profileImageUrl'] ?? '').toString();
+            final specializations =
+                (data['specializations'] as List?)?.cast<String>() ?? [];
+            final subtitle = specializations.isNotEmpty
+                ? specializations.join(', ')
+                : (data['bio'] ?? '').toString();
+
+            return ListTile(
+              leading: _UserAvatar(
+                imageUrl: image,
+                name: name,
+                radius: 24,
+                fontSize: 16,
+              ),
+              title: Text(
+                name,
+                style: TextStyle(
+                    fontWeight: FontWeight.w600, color: textPrimary),
+              ),
+  subtitle: subtitle.isNotEmpty
+    ? Text(subtitle, style: TextStyle(color: textHint))
+    : null,
+              onTap: () async {
+                await controller.openChat(doc.id);
+                Get.to(
+                  () => ChatRoomScreen(
+                    otherUserId: doc.id,
+                    roomName: name,
+                    profileImageUrl: image.isNotEmpty ? image : null,
+                  ),
+                  transition: Transition.rightToLeft,
+                  duration: const Duration(milliseconds: 300),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -670,3 +1032,6 @@ class _FallbackAvatar extends StatelessWidget {
     );
   }
 }
+
+
+

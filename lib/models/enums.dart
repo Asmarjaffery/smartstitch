@@ -69,3 +69,38 @@ enum AnalyticsFilter {
   lastYear,
   custom,
 }
+
+// ─── Booking Cancellation & Refund Management ──────────────────────────────
+
+/// Lifecycle of a refund request. `null` on an OrderModel/booking means no
+/// refund has ever been requested for it.
+enum RefundStatus { requested, approved, rejected }
+
+/// Reasons a customer can pick when cancelling a paid booking.
+enum CancellationReason {
+  tailorNotResponding,
+  orderNotStarted,
+  excessiveDelay,
+  changedMind,
+  duplicatePayment,
+  other,
+}
+
+extension CancellationReasonX on CancellationReason {
+  String get label {
+    switch (this) {
+      case CancellationReason.tailorNotResponding:
+        return 'Tailor not responding';
+      case CancellationReason.orderNotStarted:
+        return 'Order not started';
+      case CancellationReason.excessiveDelay:
+        return 'Excessive delay';
+      case CancellationReason.changedMind:
+        return 'Changed my mind';
+      case CancellationReason.duplicatePayment:
+        return 'Duplicate payment';
+      case CancellationReason.other:
+        return 'Other';
+    }
+  }
+}

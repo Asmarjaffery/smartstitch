@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.smartstitch"
 
-    compileSdk = 36   // ✅ FIXED
+    compileSdk = 36
 
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +27,7 @@ android {
 
         minSdk = flutter.minSdkVersion
 
-        targetSdk = 36   // ✅ FIXED
+        targetSdk = 36
 
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -46,4 +46,7 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // Required by flutter_stripe
+    implementation("com.google.android.material:material:1.12.0")
 }

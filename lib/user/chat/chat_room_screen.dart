@@ -20,14 +20,12 @@ import '../../core/theme/app.theme.dart';
 class ChatRoomScreen extends StatefulWidget {
   final String otherUserId;
   final String roomName;
-  final String? phoneNumber;
   final String? profileImageUrl;
 
   const ChatRoomScreen({
     super.key,
     required this.otherUserId,
     required this.roomName,
-    this.phoneNumber,
     this.profileImageUrl,
   });
 
@@ -110,6 +108,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   void _sendText() {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
+
+    // 🔒 Personal info / contact sharing check (also shown instantly here so
+    // input field doesn't even get cleared on a blocked message).
+    if (_controller.containsPersonalInfo(text)) {
+      AppHelpers.showError(
+        'Personal number, address ya contact detail share karna allowed nahi hai. Sirf order se related baat karein.',
+      );
+      return;
+    }
+
     _controller.sendText(text, widget.otherUserId);
     _textController.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -207,151 +215,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   }
 
   void _cancelRecording() => _controller.cancelRecording();
-
-  void _shareLocation() {
-    _controller.sendLocation(widget.otherUserId);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-  }
-
-  Future<void> _makeCall() async {
-    final phone = widget.phoneNumber ?? '';
-    if (phone.isEmpty) {
-      _showCallDialog(null);
-      return;
-    }
-    final uri = Uri.parse('tel:$phone');
-    bool launched = false;
-    try {
-      if (await canLaunchUrl(uri)) {
-        launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
-    if (!launched) _showCallDialog(phone);
-  }
-
-  void _showCallDialog(String? phone) {
-    final hasNumber = phone != null && phone.isNotEmpty;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final textPrimary =
-        isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
-    final textSecondary =
-        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
-    final textHint = isDark ? AppColors.darkTextHint : AppColors.lightTextHint;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 24),
-              decoration:
-                  BoxDecoration(color: border, borderRadius: BorderRadius.circular(2)),
-            ),
-            _ChatAvatar(
-                imageUrl: widget.profileImageUrl,
-                name: widget.roomName,
-                radius: 36),
-            const SizedBox(height: 14),
-            Text(widget.roomName,
-                style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
-                    color: textPrimary)),
-            const SizedBox(height: 6),
-            if (hasNumber) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(phone,
-                      style: TextStyle(fontSize: 15, color: textSecondary)),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: phone));
-                      Get.back();
-                      Get.snackbar('Copied!', 'Phone number copied',
-                          backgroundColor: AppColors.primary,
-                          colorText: Colors.white,
-                          snackPosition: SnackPosition.BOTTOM);
-                    },
-                    child: const Icon(Icons.copy_rounded,
-                        size: 18, color: AppColors.primary),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: phone));
-                      Get.back();
-                    },
-                    icon: const Icon(Icons.copy_rounded, color: AppColors.primary),
-                    label: const Text('Copy',
-                        style: TextStyle(color: AppColors.primary)),
-                    style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: AppRadius.medium)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      Get.back();
-                      await launchUrl(Uri.parse('tel:$phone'),
-                          mode: LaunchMode.externalApplication);
-                    },
-                    icon: const Icon(Icons.call_rounded, color: Colors.white),
-                    label: const Text('Call Now',
-                        style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.success,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: AppRadius.medium)),
-                  ),
-                ),
-              ]),
-            ] else ...[
-              const SizedBox(height: 8),
-              Icon(Icons.phone_disabled_rounded, size: 44, color: textHint),
-              const SizedBox(height: 12),
-              Text('Phone number not available',
-                  style: TextStyle(fontSize: 14, color: textSecondary)),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Get.back(),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: AppRadius.medium)),
-                  child:
-                      const Text('OK', style: TextStyle(color: Colors.white)),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   // ─── Overflow Menu (only Delete chat now) ────────────────────────────────
   void _showMenu(BuildContext context) {
@@ -543,7 +406,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                     onSendText: _sendText,
                     onPickImage: _pickAndSendImage,
                     onStartRecording: _startRecording,
-                    onShareLocation: _shareLocation,
                   ),
                 )
               : const SizedBox.shrink()),
@@ -647,10 +509,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         ),
       ),
       actions: [
-        IconButton(
-          icon: Icon(Icons.call_outlined, color: textPrimary),
-          onPressed: _makeCall,
-        ),
+        // Call icon removed — no direct phone contact between users/artists.
         IconButton(
           icon: Icon(Icons.more_vert_rounded, color: textPrimary),
           onPressed: () => _showMenu(context),
@@ -1469,7 +1328,6 @@ class _InputBar extends StatefulWidget {
   final VoidCallback onSendText;
   final VoidCallback onPickImage;
   final VoidCallback onStartRecording;
-  final VoidCallback? onShareLocation;
 
   const _InputBar({
     required this.textController,
@@ -1477,7 +1335,6 @@ class _InputBar extends StatefulWidget {
     required this.onSendText,
     required this.onPickImage,
     required this.onStartRecording,
-    this.onShareLocation,
   });
 
   @override
@@ -1571,21 +1428,10 @@ class _InputBarState extends State<_InputBar> {
                           size: 20,
                         ),
                       ),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (widget.onShareLocation != null)
-                            IconButton(
-                              icon: Icon(Icons.location_on_outlined,
-                                  color: textHint, size: 20),
-                              onPressed: widget.onShareLocation,
-                            ),
-                          IconButton(
-                            icon: Icon(Icons.camera_alt_outlined,
-                                color: textHint, size: 20),
-                            onPressed: widget.onPickImage,
-                          ),
-                        ],
+                      suffixIcon: IconButton(
+                        icon: Icon(Icons.camera_alt_outlined,
+                            color: textHint, size: 20),
+                        onPressed: widget.onPickImage,
                       ),
                     ),
                     onSubmitted: (_) => widget.onSendText(),

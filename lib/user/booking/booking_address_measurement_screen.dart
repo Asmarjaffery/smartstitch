@@ -3,7 +3,10 @@ import 'package:get/get.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
+import 'package:smartstitch/core/widgets/clothing_type_selector.dart';
 import 'package:smartstitch/models/address_model.dart';
+import 'package:smartstitch/models/clothing_type.dart';
+import 'package:smartstitch/models/measurement_field.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/user/booking/booking_controller.dart';
 import 'package:smartstitch/user/measurement/measurement_controller.dart';
@@ -382,7 +385,8 @@ class BookingAddressMeasurementScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(width: 6),
                                         Text(
-                                          m.isAiGenerated ? 'AI Scan' : 'Manual',
+                                          '${m.clothingType.emoji} ${m.clothingType.label} '
+                                          '(${m.isAiGenerated ? 'AI' : 'Manual'})',
                                           style: AppTextStyles.labelMedium
                                               .copyWith(
                                                   color: isSelected
@@ -401,18 +405,14 @@ class BookingAddressMeasurementScreen extends StatelessWidget {
                                   spacing: 8,
                                   runSpacing: 6,
                                   children: [
-                                    _MeasChip(label: 'H', value: m.height),
-                                    _MeasChip(
-                                        label: 'Chest', value: m.chest),
-                                    _MeasChip(
-                                        label: 'Waist', value: m.waist),
-                                    _MeasChip(
-                                        label: 'Shoulder',
-                                        value: m.shoulder),
-                                    _MeasChip(label: 'Hips', value: m.hips),
-                                    _MeasChip(
-                                        label: 'Sleeve',
-                                        value: m.sleevLength),
+                                    for (final field in m.activeFields)
+                                      if (m.valueOf(field) != null)
+                                        _MeasChip(
+                                          label: MeasurementFieldRegistry
+                                              .specOf(field)
+                                              .label,
+                                          value: m.valueOf(field)!,
+                                        ),
                                   ],
                                 ),
                               ],
@@ -588,7 +588,7 @@ class BookingAddressMeasurementScreen extends StatelessWidget {
                       );
                       await ProfileController.to.addAddress(address);
                       await AuthController.to.reloadCurrentUser();
-                      Navigator.pop(ctx);
+                      if (ctx.mounted) Navigator.pop(ctx);
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
@@ -610,87 +610,252 @@ class BookingAddressMeasurementScreen extends StatelessWidget {
   }
 
   // ✅ Properly placed as a method of BookingAddressMeasurementScreen
+  //
+  // Now includes a garment picker (matching the full Measurements screen),
+  // so shirt / trouser / shalwar kameez / full dress / custom all ask the
+  // right measurements instead of the old fixed 6-field set.
   void _showManualEntrySheet(
       BuildContext context, MeasurementController measCtrl) {
-    final heightCtrl = TextEditingController();
-    final chestCtrl = TextEditingController();
-    final waistCtrl = TextEditingController();
-    final shoulderCtrl = TextEditingController();
-    final hipsCtrl = TextEditingController();
-    final sleeveCtrl = TextEditingController();
+    ClothingType? selectedType;
+    Set<MeasurementField> customFields = {};
+    Map<MeasurementField, TextEditingController> controllers = {};
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(ctx).size.height * 0.85),
-          decoration: BoxDecoration(
-            color: Theme.of(ctx).scaffoldBackgroundColor,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Add Measurements', style: AppTextStyles.h4),
-              Text('All values in cm',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: Theme.of(context).textTheme.bodySmall?.color)),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _Field(ctrl: heightCtrl, label: 'Height'),
-                      _Field(ctrl: chestCtrl, label: 'Chest'),
-                      _Field(ctrl: waistCtrl, label: 'Waist'),
-                      _Field(ctrl: shoulderCtrl, label: 'Shoulder'),
-                      _Field(ctrl: hipsCtrl, label: 'Hips'),
-                      _Field(ctrl: sleeveCtrl, label: 'Sleeve Length'),
-                    ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final fields = selectedType == null
+              ? <MeasurementField>[]
+              : selectedType == ClothingType.custom
+                  ? customFields.toList()
+                  : ClothingMeasurementRegistry.of(selectedType!).displayFields;
+          final requiredFields = selectedType == null
+              ? <MeasurementField>{}
+              : selectedType == ClothingType.custom
+                  ? customFields
+                  : ClothingMeasurementRegistry.of(selectedType!).required;
+
+          // Ensure a controller exists for every currently-visible field.
+          for (final f in fields) {
+            controllers.putIfAbsent(f, () => TextEditingController());
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              constraints:
+                  BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Add Measurements', style: AppTextStyles.h4),
+                  Text('All values in cm',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: Theme.of(context).textTheme.bodySmall?.color)),
+                  const SizedBox(height: 16),
+                  Text('What would you like to stitch?',
+                      style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 10),
+                  ClothingTypeSelector(
+                    selected: selectedType,
+                    onSelect: (type) async {
+                      if (type == ClothingType.custom) {
+                        final picked = await _showCustomFieldPickerForBooking(ctx);
+                        if (picked == null || picked.isEmpty) return;
+                        customFields = picked;
+                      }
+                      controllers = {};
+                      setSheetState(() {
+                        selectedType = type;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  if (selectedType == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Text(
+                        'Select a garment above to continue.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                            color: Theme.of(context).textTheme.bodySmall?.color),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            for (final field in fields)
+                              _Field(
+                                ctrl: controllers[field]!,
+                                label: MeasurementFieldRegistry.specOf(field).label,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Obx(() => SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: (measCtrl.isLoading.value || selectedType == null)
+                              ? null
+                              : () async {
+                                  final type = selectedType!;
+                                  final errs = _validateBookingFields(
+                                      fields, requiredFields, controllers);
+                                  if (errs.isNotEmpty) {
+                                    AppHelpers.showError(errs.first);
+                                    return;
+                                  }
+                                  await measCtrl.saveManualMeasurement(
+                                    clothingType: type,
+                                    rawValues: {
+                                      for (final f in fields) f: controllers[f]!.text,
+                                    },
+                                    customFields: customFields,
+                                  );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            shape: const RoundedRectangleBorder(
+                                borderRadius: AppRadius.medium),
+                          ),
+                          child: measCtrl.isLoading.value
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : Text('Save',
+                                  style: AppTextStyles.labelLarge
+                                      .copyWith(color: Colors.white)),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Checklist for [ClothingType.custom] inside the booking flow's manual
+  /// entry sheet. Mirrors the picker on the full Measurements screen.
+  Future<Set<MeasurementField>?> _showCustomFieldPickerForBooking(
+      BuildContext context) async {
+    final selected = <MeasurementField>{};
+
+    return showModalBottomSheet<Set<MeasurementField>>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Choose Your Measurements', style: AppTextStyles.h4),
+                Text(
+                  'Pick every measurement you want to provide',
+                  style: AppTextStyles.bodySmall.copyWith(
+                      color: Theme.of(context).textTheme.bodySmall?.color),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        for (final field in ClothingMeasurementRegistry.allFields)
+                          CheckboxListTile(
+                            value: selected.contains(field),
+                            title: Text(MeasurementFieldRegistry.specOf(field).label),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (checked) {
+                              setSheetState(() {
+                                if (checked == true) {
+                                  selected.add(field);
+                                } else {
+                                  selected.remove(field);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await measCtrl.saveManualMeasurement(
-                      height: double.tryParse(heightCtrl.text) ?? 0,
-                      chest: double.tryParse(chestCtrl.text) ?? 0,
-                      waist: double.tryParse(waistCtrl.text) ?? 0,
-                      shoulder: double.tryParse(shoulderCtrl.text) ?? 0,
-                      hips: double.tryParse(hipsCtrl.text) ?? 0,
-                      sleevLength: double.tryParse(sleeveCtrl.text) ?? 0,
-                      inseam: 0,
-                      neck: 0,
-                    );
-                    Navigator.pop(ctx);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: const RoundedRectangleBorder(
-                        borderRadius: AppRadius.medium),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: selected.isEmpty
+                        ? null
+                        : () => Navigator.pop(ctx, selected),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape:
+                          const RoundedRectangleBorder(borderRadius: AppRadius.medium),
+                    ),
+                    child: Text('Continue',
+                        style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
                   ),
-                  child: Text('Save',
-                      style: AppTextStyles.labelLarge
-                          .copyWith(color: Colors.white)),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// Validates the booking flow's manual entry fields — same rules used by
+  /// the full Measurements screen's edit sheet (required check, numeric
+  /// check, min/max range check).
+  List<String> _validateBookingFields(
+    List<MeasurementField> fields,
+    Set<MeasurementField> requiredFields,
+    Map<MeasurementField, TextEditingController> controllers,
+  ) {
+    final errors = <String>[];
+    for (final field in fields) {
+      final spec = MeasurementFieldRegistry.specOf(field);
+      final text = controllers[field]?.text.trim() ?? '';
+      final required = requiredFields.contains(field);
+      if (text.isEmpty) {
+        if (required) errors.add('${spec.label} is required');
+        continue;
+      }
+      final value = double.tryParse(text);
+      if (value == null) {
+        errors.add('${spec.label} must be a number');
+      } else if (value <= 0) {
+        errors.add('${spec.label} must be greater than zero');
+      } else if (value < spec.min || value > spec.max) {
+        errors.add(
+            '${spec.label} must be between ${spec.min.toStringAsFixed(0)}-${spec.max.toStringAsFixed(0)} cm');
+      }
+    }
+    return errors;
   }
 }
 

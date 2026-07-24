@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:smartstitch/core/widgets/booking_status_badge.dart';
 import 'package:smartstitch/models/order_model.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/user/order/order_controller.dart';
+
 
 class OrdersScreen extends StatelessWidget {
   const OrdersScreen({super.key});
@@ -260,19 +262,25 @@ class _OrderCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.1),
-                      borderRadius: AppRadius.full,
-                    ),
-                    child: Text(
-                      _statusLabel(order.status),
-                      style:
-                          AppTextStyles.labelSmall.copyWith(color: statusColor),
-                    ),
-                  ),
+                  Builder(builder: (context) {
+                    final displayStatus = resolveOrderDisplayStatus(order);
+                    if (displayStatus != null) {
+                      return BookingStatusBadge(status: displayStatus, dense: true);
+                    }
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: AppRadius.full,
+                      ),
+                      child: Text(
+                        _statusLabel(order.status),
+                        style: AppTextStyles.labelSmall
+                            .copyWith(color: statusColor),
+                      ),
+                    );
+                  }),
                 ],
               ),
 

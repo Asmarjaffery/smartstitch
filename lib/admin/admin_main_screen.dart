@@ -11,6 +11,7 @@ import 'package:smartstitch/admin/complaint/admin_complaint_screen.dart';
 import 'package:smartstitch/admin/users/admin_user_screen.dart';
 import 'package:smartstitch/admin/notification/admin_notification_screen.dart';
 import 'package:smartstitch/admin/review/admin_review_screen.dart';
+import 'package:smartstitch/admin/refunds/refund_requests_screen.dart';
 
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
@@ -34,13 +35,14 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     _NavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
     _NavItem(icon: Icons.analytics_rounded, label: 'Analytics'),
     _NavItem(icon: Icons.design_services_rounded, label: 'Services'),
-    _NavItem(icon: Icons.receipt_long_rounded, label: 'Orders'),
-    _NavItem(icon: Icons.bar_chart_rounded, label: 'Performance'),
-    _NavItem(icon: Icons.report_problem_rounded, label: 'Complaints'),
     _NavItem(icon: Icons.people_alt_rounded, label: 'Users'),
+    _NavItem(icon: Icons.bar_chart_rounded, label: 'Performance'),
+    _NavItem(icon: Icons.receipt_long_rounded, label: 'Orders'),
+    _NavItem(icon: Icons.report_problem_rounded, label: 'Complaints'),
     _NavItem(icon: Icons.star_rounded, label: 'Reviews'),
     _NavItem(icon: Icons.account_balance_wallet_rounded, label: 'Withdrawals'),
     _NavItem(icon: Icons.bar_chart_rounded,label: 'Report'),
+    _NavItem(icon: Icons.currency_exchange_rounded, label: 'Refunds'),
   ];
 
   final List<Widget> _pages = const [
@@ -53,7 +55,8 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     AdminUsersScreen(),
     AdminReviewScreen(),
     AdminCombinedWithdrawalScreen(),
-    ReportsScreen()
+    ReportsScreen(),
+    RefundRequestsScreen(),
   ];
 
   Future<void> _logout() async {

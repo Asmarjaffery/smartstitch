@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/core/utils/measurement_calculator.dart';
+import 'package:smartstitch/core/utils/measurement_validator.dart';
 import 'package:smartstitch/models/body_measurement_model.dart';
+import 'package:smartstitch/models/clothing_type.dart';
+import 'package:smartstitch/models/measurement_field.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
 import 'package:smartstitch/services/firebase_service.dart';
 import 'package:smartstitch/services/pose_estimation_service.dart';
@@ -32,6 +35,15 @@ class MeasurementController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxBool isAiScanning = false.obs;
 
+  /// Step 1 of the measurement flow — "What would you like to stitch?".
+  /// Every subsequent action (AI scan, manual entry) is scoped to this
+  /// selection so the customer is never asked for irrelevant fields.
+  final Rx<ClothingType?> selectedClothingType = Rx<ClothingType?>(null);
+
+  /// Only used while [selectedClothingType] is [ClothingType.custom] — the
+  /// fields the customer picked from the checklist.
+  final RxSet<MeasurementField> customSelectedFields = <MeasurementField>{}.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -40,13 +52,26 @@ class MeasurementController extends GetxController {
 
   @override
   void onClose() {
-    // NOTE: PoseEstimationService is an app-wide singleton shared with
-    // PoseCameraView (and any other screen that uses AI scanning).
-    // It must NOT be disposed here — doing so permanently breaks pose
-    // detection for every subsequent scan in the app, since `_isDisposed`
-    // on the shared instance never resets back to false.
-    // _poseService.dispose(); // ❌ removed on purpose
     super.onClose();
+  }
+
+  // ─── Clothing type selection ────────────────────────────────────────────
+  void selectClothingType(ClothingType type) {
+    selectedClothingType.value = type;
+    if (type != ClothingType.custom) {
+      customSelectedFields.clear();
+    }
+  }
+
+  void setCustomFields(Set<MeasurementField> fields) {
+    customSelectedFields
+      ..clear()
+      ..addAll(fields);
+  }
+
+  void resetClothingTypeSelection() {
+    selectedClothingType.value = null;
+    customSelectedFields.clear();
   }
 
   // ─── Load History ──────────────────────────────────────────────────────────
@@ -92,9 +117,11 @@ class MeasurementController extends GetxController {
       );
 
       final uid = AuthController.to.currentUserId!;
+      final clothingType = selectedClothingType.value ?? ClothingType.custom;
       final aiMeasurement = BodyMeasurementModel(
         id: const Uuid().v4(),
         userId: uid,
+        clothingType: clothingType,
         height: measurements.height.value,
         chest: measurements.chest.value,
         waist: measurements.waist.value,
@@ -103,6 +130,9 @@ class MeasurementController extends GetxController {
         sleevLength: measurements.sleevLength.value,
         inseam: measurements.inseam.value,
         neck: measurements.neck.value,
+        customFields: clothingType == ClothingType.custom
+            ? customSelectedFields.toList()
+            : null,
         aiAccuracyScore: measurements.overallScore,
         isAiGenerated: true,
         measuredAt: DateTime.now(),
@@ -124,7 +154,7 @@ class MeasurementController extends GetxController {
 
   Future<void> _saveAiMeasurement(BodyMeasurementModel m) async {
     final uid = AuthController.to.currentUserId!;
-    final json = {...m.toJson(), 'measuredAt': m.measuredAt.toIso8601String()};
+    final json = m.toJson();
 
     await _firebaseService.firestore
         .collection('measurements')
@@ -147,9 +177,14 @@ class MeasurementController extends GetxController {
     try {
       isLoading.value = true;
       final uid = AuthController.to.currentUserId!;
+      final clothingType =
+          model.clothingType != ClothingType.custom || selectedClothingType.value == null
+              ? model.clothingType
+              : selectedClothingType.value!;
       final m = BodyMeasurementModel(
         id: model.id,
         userId: uid,
+        clothingType: clothingType,
         height: model.height,
         chest: model.chest,
         waist: model.waist,
@@ -158,11 +193,21 @@ class MeasurementController extends GetxController {
         sleevLength: model.sleevLength,
         inseam: model.inseam,
         neck: model.neck,
+        wrist: model.wrist,
+        shirtLength: model.shirtLength,
+        outseam: model.outseam,
+        thigh: model.thigh,
+        knee: model.knee,
+        bottomWidth: model.bottomWidth,
+        trouserLength: model.trouserLength,
+        customFields: clothingType == ClothingType.custom
+            ? (model.customFields ?? customSelectedFields.toList())
+            : null,
         aiAccuracyScore: model.aiAccuracyScore,
         isAiGenerated: true,
         measuredAt: model.measuredAt,
       );
-      final json = {...m.toJson(), 'measuredAt': m.measuredAt.toIso8601String()};
+      final json = m.toJson();
       await _firebaseService.firestore
           .collection('measurements')
           .doc(m.id)
@@ -185,38 +230,57 @@ class MeasurementController extends GetxController {
   }
 
   // ─── Save Manual ───────────────────────────────────────────────────────────
+  /// Clothing-type aware manual save. [rawValues] holds the raw text typed
+  /// into each field's input — validation (required/numeric/>0/range) runs
+  /// here so invalid data is never written to Firestore, no matter which
+  /// screen called this.
   Future<void> saveManualMeasurement({
-    required double height,
-    required double chest,
-    required double waist,
-    required double shoulder,
-    required double hips,
-    required double sleevLength,
-    required double inseam,
-    required double neck,
+    required ClothingType clothingType,
+    required Map<MeasurementField, String> rawValues,
+    Set<MeasurementField> customFields = const {},
   }) async {
+    final errors = MeasurementValidator.validateForm(
+      clothingType: clothingType,
+      rawValues: rawValues,
+      customFields: customFields,
+    );
+    if (errors.isNotEmpty) {
+      AppHelpers.showError(errors.values.first);
+      return;
+    }
+
+    double? parse(MeasurementField f) =>
+        double.tryParse(rawValues[f]?.trim() ?? '');
+
     try {
       isLoading.value = true;
       final uid = AuthController.to.currentUserId!;
       final measurement = BodyMeasurementModel(
         id: const Uuid().v4(),
         userId: uid,
-        height: height,
-        chest: chest,
-        waist: waist,
-        shoulder: shoulder,
-        hips: hips,
-        sleevLength: sleevLength,
-        inseam: inseam,
-        neck: neck,
+        clothingType: clothingType,
+        height: parse(MeasurementField.height) ?? 0,
+        chest: parse(MeasurementField.chest) ?? 0,
+        waist: parse(MeasurementField.waist) ?? 0,
+        shoulder: parse(MeasurementField.shoulder) ?? 0,
+        hips: parse(MeasurementField.hips) ?? 0,
+        sleevLength: parse(MeasurementField.sleeveLength) ?? 0,
+        inseam: parse(MeasurementField.inseam) ?? 0,
+        neck: parse(MeasurementField.neck) ?? 0,
+        wrist: parse(MeasurementField.wrist),
+        shirtLength: parse(MeasurementField.shirtLength),
+        outseam: parse(MeasurementField.outseam),
+        thigh: parse(MeasurementField.thigh),
+        knee: parse(MeasurementField.knee),
+        bottomWidth: parse(MeasurementField.bottomWidth),
+        trouserLength: parse(MeasurementField.trouserLength),
+        customFields:
+            clothingType == ClothingType.custom ? customFields.toList() : null,
         aiAccuracyScore: 0.0,
         isAiGenerated: false,
         measuredAt: DateTime.now(),
       );
-      final json = {
-        ...measurement.toJson(),
-        'measuredAt': measurement.measuredAt.toIso8601String(),
-      };
+      final json = measurement.toJson();
       await _firebaseService.firestore
           .collection('measurements')
           .doc(measurement.id)
@@ -252,14 +316,13 @@ class MeasurementController extends GetxController {
   }
 
   // ─── Update ────────────────────────────────────────────────────────────────
+  /// Generic update — works for any clothing type since [updated] already
+  /// carries its own `clothingType` / `activeFields`.
   Future<void> updateMeasurement(BodyMeasurementModel updated) async {
     try {
       isLoading.value = true;
       final uid = AuthController.to.currentUserId!;
-      final json = {
-        ...updated.toJson(),
-        'measuredAt': updated.measuredAt.toIso8601String(),
-      };
+      final json = updated.toJson();
       await _firebaseService.firestore
           .collection('measurements')
           .doc(updated.id)

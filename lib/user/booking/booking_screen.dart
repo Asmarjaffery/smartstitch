@@ -330,21 +330,11 @@ class BookingScreen extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // ─── Select Time Slot (Preferred) ───────────────────────
-            Row(
-              children: [
-                const _SectionHeader(title: 'Preferred Time'),
-                const SizedBox(width: 8),
-                Text(
-                  '(Optional)',
-                  style: AppTextStyles.caption
-                      .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
-                ),
-              ],
-            ),
+            // ─── Select Time Slot (Required) ────────────────────────
+            const _SectionHeader(title: 'Preferred Time'),
             const SizedBox(height: 6),
             Text(
-              'Artist will confirm this slot after reviewing your booking.',
+              'Select a time slot. Artist will confirm it after reviewing your booking.',
               style: AppTextStyles.caption
                   .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
             ),
@@ -353,106 +343,185 @@ class BookingScreen extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // ─── Upload Design ─────────────────────────────────────
-            const _SectionHeader(title: 'Upload Design (Optional)'),
+            // ─── Upload Design (multiple — each image adds Rs 200,
+            // doubling with every extra upload: 1 img = 200, 2 = 400,
+            // 3 = 600, ...) ────────────────────────────────────────
+            Row(
+              children: [
+                const _SectionHeader(title: 'Upload Design (Optional)'),
+                const SizedBox(width: 8),
+                Obx(() {
+                  if (ctrl.designImageUrls.isEmpty) return const SizedBox();
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '+Rs ${ctrl.designImageFee.toInt()}',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                    ),
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Each design image adds Rs 200 to your total.',
+              style: AppTextStyles.caption
+                  .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
+            ),
             const SizedBox(height: 14),
+
+            // Uploaded images grid
+            Obx(() {
+              if (ctrl.designImageUrls.isEmpty) return const SizedBox();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (int i = 0; i < ctrl.designImageUrls.length; i++)
+                      Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: AppRadius.medium,
+                            child: Image.network(
+                              ctrl.designImageUrls[i],
+                              width: 90,
+                              height: 90,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              onTap: () => ctrl.removeDesignImage(i),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white, size: 14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              );
+            }),
+
+            // Upload box / add more button
             Obx(() => GestureDetector(
                   onTap: ctrl.isUploadingImage.value
                       ? null
                       : ctrl.uploadDesignImage,
                   child: Container(
                     width: double.infinity,
-                    height: 200,
+                    height: ctrl.designImageUrls.isEmpty ? 200 : 90,
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surface,
                       borderRadius: AppRadius.large,
                       border: Border.all(
-                        color: ctrl.designImageUrl.value.isNotEmpty
-                            ? AppColors.primary
-                            : ctrl.uploadFailed.value
-                                ? AppColors.error
-                                : Theme.of(context).colorScheme.outline,
+                        color: ctrl.uploadFailed.value
+                            ? AppColors.error
+                            : Theme.of(context).colorScheme.outline,
                       ),
                     ),
                     child: ctrl.isUploadingImage.value
                         ? const Center(child: CircularProgressIndicator())
-                        : ctrl.designImageUrl.value.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: AppRadius.large,
-                                child: Stack(
-                                  children: [
-                                    Image.network(
-                                      ctrl.designImageUrl.value,
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      fit: BoxFit.contain,
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: GestureDetector(
-                                        onTap: () =>
-                                            ctrl.designImageUrl.value = '',
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: AppColors.primary,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close,
-                                              color: Colors.white, size: 16),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : ctrl.uploadFailed.value
-                                ? Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(Icons.cloud_off_outlined,
-                                          color: AppColors.error, size: 36),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Upload failed',
-                                        style: AppTextStyles.labelMedium
-                                            .copyWith(color: AppColors.error),
-                                      ),
-                                      Text(
-                                        'Tap to try again',
-                                        style: AppTextStyles.caption.copyWith(
-                                            color:
-                                                Theme.of(context).textTheme.bodySmall?.color),
-                                      ),
-                                    ],
-                                  )
-                                : Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(Icons.cloud_upload_outlined,
-                                          color: AppColors.primary, size: 36),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Upload your design',
-                                        style: AppTextStyles.labelMedium
-                                            .copyWith(color: AppColors.primary),
-                                      ),
-                                      Text(
-                                        'JPG, PNG supported',
-                                        style: AppTextStyles.caption.copyWith(
-                                            color:
-                                                Theme.of(context).textTheme.bodySmall?.color),
-                                      ),
-                                    ],
+                        : ctrl.uploadFailed.value
+                            ? Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.cloud_off_outlined,
+                                      color: AppColors.error, size: 36),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Upload failed',
+                                    style: AppTextStyles.labelMedium
+                                        .copyWith(color: AppColors.error),
                                   ),
+                                  Text(
+                                    'Tap to try again',
+                                    style: AppTextStyles.caption.copyWith(
+                                        color:
+                                            Theme.of(context).textTheme.bodySmall?.color),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    ctrl.designImageUrls.isEmpty
+                                        ? Icons.cloud_upload_outlined
+                                        : Icons.add_photo_alternate_outlined,
+                                    color: AppColors.primary,
+                                    size: ctrl.designImageUrls.isEmpty ? 36 : 26,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    ctrl.designImageUrls.isEmpty
+                                        ? 'Upload your design'
+                                        : 'Add another design (+Rs 200)',
+                                    style: AppTextStyles.labelMedium
+                                        .copyWith(color: AppColors.primary),
+                                  ),
+                                  if (ctrl.designImageUrls.isEmpty)
+                                    Text(
+                                      'JPG, PNG supported',
+                                      style: AppTextStyles.caption.copyWith(
+                                          color:
+                                              Theme.of(context).textTheme.bodySmall?.color),
+                                    ),
+                                ],
+                              ),
                   ),
                 )),
 
             const SizedBox(height: 28),
 
             // ─── Special Instructions ──────────────────────────────
-            const _SectionHeader(title: 'Special Instructions (Optional)'),
+            Row(
+              children: [
+                const _SectionHeader(title: 'Special Instructions (Optional)'),
+                const SizedBox(width: 8),
+                Obx(() {
+                  if (ctrl.specialInstructions.value.trim().isEmpty) {
+                    return const SizedBox();
+                  }
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '+Rs ${ctrl.specialInstructionsFee.toInt()}',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                    ),
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Adding instructions adds a flat Rs 200 to your total.',
+              style: AppTextStyles.caption
+                  .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
+            ),
             const SizedBox(height: 14),
             TextField(
               onChanged: (v) => ctrl.specialInstructions.value = v,
@@ -546,12 +615,19 @@ class _BottomBar extends StatelessWidget {
                     .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
               ),
               const SizedBox(height: 2),
-              Obx(() => Text(
-                    ctrl.selectedService.value != null
-                        ? 'PKR ${ctrl.selectedService.value!.basePrice.toInt()}'
-                        : 'PKR 0',
-                    style: AppTextStyles.h4.copyWith(color: AppColors.primary),
-                  )),
+              // Includes base price + design-image fee + special
+              // instructions fee, so the customer sees the real running
+              // total as soon as they add either one.
+              Obx(() {
+                final base = ctrl.selectedService.value?.basePrice ?? 0;
+                final total = base + ctrl.extraChargesFee;
+                return Text(
+                  ctrl.selectedService.value != null
+                      ? 'PKR ${total.toInt()}'
+                      : 'PKR 0',
+                  style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+                );
+              }),
               TextButton(
                 onPressed: () {},
                 style: TextButton.styleFrom(
@@ -589,7 +665,11 @@ class _BottomBar extends StatelessWidget {
                               AppHelpers.showError('Please select a date.');
                               return;
                             }
-                            // Note: time slot is optional — no validation here.
+                            if (ctrl.selectedTimeSlot.value.isEmpty) {
+                              AppHelpers.showError(
+                                  'Please select a time slot.');
+                              return;
+                            }
                             Get.toNamed(AppRoutes.bookingAddressMeasurement);
                           },
                     style: ElevatedButton.styleFrom(
@@ -630,6 +710,9 @@ class _TimeSlotDropdown extends StatelessWidget {
 
     return Obx(() {
       final selected = ctrl.selectedTimeSlot.value;
+      final hintColor = Theme.of(context).brightness == Brightness.dark
+          ? AppColors.darkTextHint
+          : AppColors.lightTextHint;
       return GestureDetector(
         onTap: () => _showTimeSlotSheet(context, ctrl),
         child: Container(
@@ -664,11 +747,15 @@ class _TimeSlotDropdown extends StatelessWidget {
                         .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
                   ),
                   const SizedBox(height: 2),
+                  // Shows the actual selected slot only. No fake
+                  // placeholder value — if nothing is selected yet it
+                  // says so clearly, so the customer isn't misled into
+                  // thinking a slot is already chosen.
                   Text(
-                    selected.isNotEmpty
-                        ? selected
-                        : 'Morning (9:00 AM – 12:00 PM)',
-                    style: AppTextStyles.labelLarge,
+                    selected.isNotEmpty ? selected : 'Tap to select time slot',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: selected.isNotEmpty ? null : hintColor,
+                    ),
                   ),
                 ],
               ),

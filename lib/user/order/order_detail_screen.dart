@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:smartstitch/models/order_model.dart';
+import 'package:smartstitch/models/refund_model.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/user/order/order_controller.dart';
@@ -391,6 +392,44 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         ),
                       ),
                     )),
+              // ✅ UPDATED: If a refund request already exists for this
+              // order, show its status card (with the Order ID clearly
+              // visible) instead of the "Request Refund" button, so it's
+              // never ambiguous which order a refund request belongs to
+              // and the customer can't submit a duplicate request.
+              if (order.status == OrderStatus.cancelled) ...[
+                const SizedBox(height: 12),
+                Obx(() {
+                  final refund = OrderController.to.selectedRefundRequest.value;
+
+                  if (refund != null) {
+                    return _RefundRequestCard(refund: refund);
+                  }
+
+                  return SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton(
+                      onPressed: OrderController.to.isLoading.value
+                          ? null
+                          : () => _confirmRefund(order.id),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: theme.colorScheme.primary),
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: AppRadius.medium,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Request Refund',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.colorScheme.primary),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
               const SizedBox(height: 40),
             ],
           ),
@@ -418,10 +457,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             child: const Text('No'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Get.back();
-              OrderController.to.cancelOrder(orderId);
-              Get.back();
+            onPressed: () async {
+              Get.back(); // close the confirm dialog only
+              await OrderController.to.cancelOrder(orderId);
+              // Order stays on detail screen so user sees updated
+              // "Cancelled" status instead of being kicked back.
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text(
@@ -430,6 +470,91 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ✅ FIXED: OrderController.requestRefund expects
+  // (orderId, CancellationReason reason, String description) — this now
+  // lets the customer pick a proper reason from a dropdown plus an
+  // optional free-text description, instead of passing a raw String
+  // where an enum was expected (which didn't compile before).
+  void _confirmRefund(String orderId) {
+    final descCtrl = TextEditingController();
+    CancellationReason selectedReason = CancellationReason.changedMind;
+
+    Get.dialog(
+      StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Request Refund'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Refund ki wajah select karein:'),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<CancellationReason>(
+                    initialValue: selectedReason,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    items: CancellationReason.values
+                        .map((r) => DropdownMenuItem(
+                              value: r,
+                              child: Text(r.label),
+                            ))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedReason = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('If you would like to add more details...'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: descCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Provide additional details (optional)...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Get.back(); // close the dialog only
+                  await OrderController.to.requestRefund(
+                    orderId,
+                    selectedReason,
+                    descCtrl.text.trim(),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary),
+                child: const Text(
+                  'Submit Request',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -924,7 +1049,7 @@ class _OrderTracker extends StatelessWidget {
           recipientRole: UserRole.rider,
           type: NotificationType.orderUpdate,
           title: 'Customer Calling',
-          body: 'Ek customer aapko call karna chahte hain.',
+          body: 'A customer would like to contact you.',
           data: {'orderId': orderId, 'action': 'callRequest'},
         );
       }
@@ -1126,7 +1251,7 @@ class _RiderLiveLocation extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text('Rider locate ho raha hai...',
+            Text('Locating rider...',
                 style: TextStyle(color: theme.colorScheme.onSurface)),
           ],
         ),
@@ -1304,6 +1429,121 @@ class _MeasChip extends StatelessWidget {
         '$label: ${value.toStringAsFixed(1)}cm',
         style: AppTextStyles.labelSmall.copyWith(
             color: theme.colorScheme.onPrimaryContainer),
+      ),
+    );
+  }
+}
+
+// ─── Refund Request Info Card ──────────────────────────────────────────────
+// ✅ NEW: Shows which order a refund request belongs to, plus its reason,
+// status, amount and date — so it's never ambiguous which order the
+// customer requested a refund for.
+
+class _RefundRequestCard extends StatelessWidget {
+  final RefundRequestModel refund;
+  const _RefundRequestCard({required this.refund});
+
+  Color _statusColor(RefundStatus s) {
+    switch (s) {
+      case RefundStatus.requested:
+        return Colors.orange;
+      case RefundStatus.approved:
+        return AppColors.success;
+      case RefundStatus.rejected:
+        return AppColors.error;
+    }
+  }
+
+  String _statusLabel(RefundStatus s) {
+    switch (s) {
+      case RefundStatus.requested:
+        return 'Under Review';
+      case RefundStatus.approved:
+        return 'Approved';
+      case RefundStatus.rejected:
+        return 'Rejected';
+    }
+  }
+
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '-';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _statusColor(refund.refundStatus);
+    final idLen = refund.orderId.length >= 8 ? 8 : refund.orderId.length;
+
+    return _SectionCard(
+      title: 'Refund Request',
+      icon: Icons.receipt_long_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ✅ Ye clearly dikhata hai ke ye refund request KIS order ke liye hai
+          _InfoRow(
+            label: 'Order ID',
+            value: '#${refund.orderId.substring(0, idLen).toUpperCase()}',
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 110,
+                  child: Builder(
+                    builder: (context) => Text(
+                      'Status',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: AppRadius.small,
+                    border:
+                        Border.all(color: statusColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    _statusLabel(refund.refundStatus),
+                    style: AppTextStyles.labelSmall.copyWith(
+                        color: statusColor, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _InfoRow(label: 'Reason', value: refund.cancellationReason.label),
+          if (refund.cancellationDescription.isNotEmpty)
+            _InfoRow(label: 'Details', value: refund.cancellationDescription),
+          _InfoRow(
+            label: 'Amount',
+            value: 'Rs ${refund.paidAmount.toInt()}',
+          ),
+          _InfoRow(
+            label: 'Requested On',
+            value: _formatDate(refund.requestedAt),
+          ),
+          if (refund.refundStatus == RefundStatus.rejected &&
+              refund.rejectionReason != null &&
+              refund.rejectionReason!.isNotEmpty)
+            _InfoRow(
+              label: 'Rejection Note',
+              value: refund.rejectionReason!,
+            ),
+        ],
       ),
     );
   }

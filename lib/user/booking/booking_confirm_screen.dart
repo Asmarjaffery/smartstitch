@@ -495,8 +495,9 @@ class BookingConfirmScreen extends StatelessWidget {
                       ),
                     );
                   }),
+                  // ─── Design images (now supports multiple) ────────
                   Obx(() {
-                    if (ctrl.designImageUrl.value.isEmpty) {
+                    if (ctrl.designImageUrls.isEmpty) {
                       return const SizedBox();
                     }
                     return Padding(
@@ -504,16 +505,28 @@ class BookingConfirmScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Your Design',
-                              style: AppTextStyles.labelMedium
-                                  .copyWith(color: textSecondary)),
+                          Text(
+                            'Your Design (${ctrl.designImageUrls.length})',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: textSecondary),
+                          ),
                           const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: AppRadius.medium,
-                            child: Image.network(
-                              ctrl.designImageUrl.value,
-                              width: double.infinity,
-                              fit: BoxFit.fitWidth,
+                          SizedBox(
+                            height: 90,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: ctrl.designImageUrls.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (_, i) => ClipRRect(
+                                borderRadius: AppRadius.medium,
+                                child: Image.network(
+                                  ctrl.designImageUrls[i],
+                                  width: 90,
+                                  height: 90,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -536,13 +549,19 @@ class BookingConfirmScreen extends StatelessWidget {
                   }),
                   Divider(height: 28, color: borderColor),
 
-                  // ✅ Price breakdown Step 3
+                  // ✅ Price breakdown Step 3 — now includes design image
+                  // fee (Rs 200 per image, doubling with each extra
+                  // upload) and a flat Rs 200 special-instructions fee.
                   Obx(() {
                     final basePrice =
                         ctrl.selectedService.value?.basePrice.toInt() ?? 0;
                     final isHome = ctrl.isHomeVisit.value;
                     final deliveryFee = isHome ? 200 : 0;
-                    final total = basePrice + deliveryFee;
+                    final designFee = ctrl.designImageFee.toInt();
+                    final instructionsFee =
+                        ctrl.specialInstructionsFee.toInt();
+                    final total =
+                        basePrice + deliveryFee + designFee + instructionsFee;
 
                     return Column(
                       children: [
@@ -566,6 +585,35 @@ class BookingConfirmScreen extends StatelessWidget {
                                   style: AppTextStyles.labelMedium
                                       .copyWith(color: textSecondary)),
                               Text('Rs $deliveryFee',
+                                  style: AppTextStyles.labelMedium
+                                      .copyWith(color: AppColors.primary)),
+                            ],
+                          ),
+                        ],
+                        if (designFee > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                  'Design Upload Fee (${ctrl.designImageUrls.length}x)',
+                                  style: AppTextStyles.labelMedium
+                                      .copyWith(color: textSecondary)),
+                              Text('Rs $designFee',
+                                  style: AppTextStyles.labelMedium
+                                      .copyWith(color: AppColors.primary)),
+                            ],
+                          ),
+                        ],
+                        if (instructionsFee > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Special Instructions Fee',
+                                  style: AppTextStyles.labelMedium
+                                      .copyWith(color: textSecondary)),
+                              Text('Rs $instructionsFee',
                                   style: AppTextStyles.labelMedium
                                       .copyWith(color: AppColors.primary)),
                             ],
@@ -735,8 +783,6 @@ class BookingConfirmScreen extends StatelessWidget {
         return 'EasyPaisa';
       case PaymentMethod.stripe:
         return 'Card';
-      case PaymentMethod.stripe:
-        return 'Stripe';
       case PaymentMethod.debitCard:
         throw UnimplementedError();
       case PaymentMethod.creditCard:
@@ -860,6 +906,12 @@ class _BottomButtons extends StatelessWidget {
                   onPressed: ctrl.isLoading.value
                       ? null
                       : () {
+                          // Guard: don't allow confirming a booking that's
+                          // missing service / date / time / (address for
+                          // home visits) — createBooking() also checks
+                          // this, but validating here gives an instant
+                          // error without a network round trip.
+                          if (!ctrl.validateBeforeConfirm()) return;
                           ctrl.createBooking();
                         },
                   style: ElevatedButton.styleFrom(

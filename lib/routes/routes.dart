@@ -73,4 +73,5 @@ class AppRoutes {
   static const String adminSettings = '/admin/settings';
   static const String adminReviews = '/admin/reviews';
   static const String performanceScreen = '/admin/performance';
+  static const String adminRefunds = '/admin/refunds';
 }

@@ -232,36 +232,49 @@ class _OrderCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ─── Header ──────────────────────────────────────────
+              // ─── Header ──────────────────────────────────────────
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: AppRadius.small,
-                        ),
-                        child: Icon(Icons.checkroom_rounded,
-                            color: theme.colorScheme.primary, size: 20),
-                      ),
-                      const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(order.service.title,
-                              style: AppTextStyles.labelLarge.copyWith(
-                                  color: theme.colorScheme.onSurface)),
-                          Text(
-                            '#${order.id.substring(0, 8).toUpperCase()}',
-                            style: AppTextStyles.caption.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: AppRadius.small,
                           ),
-                        ],
-                      ),
-                    ],
+                          child: Icon(Icons.checkroom_rounded,
+                              color: theme.colorScheme.primary, size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                order.service.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.labelLarge.copyWith(
+                                    color: theme.colorScheme.onSurface),
+                              ),
+                              Text(
+                                '#${order.id.substring(0, 8).toUpperCase()}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.caption.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Builder(builder: (context) {
                     final displayStatus = resolveOrderDisplayStatus(order);
                     if (displayStatus != null) {
@@ -276,6 +289,8 @@ class _OrderCard extends StatelessWidget {
                       ),
                       child: Text(
                         _statusLabel(order.status),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.labelSmall
                             .copyWith(color: statusColor),
                       ),

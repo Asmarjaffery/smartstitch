@@ -455,17 +455,16 @@ class _KpiGrid extends StatelessWidget {
       ),
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: cards.length,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 1.1,
-      ),
-      itemBuilder: (context, index) => cards[index],
-    );
-  }
+     return GridView.builder(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  itemCount: cards.length,
+  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: crossAxisCount,
+    mainAxisSpacing: 16,
+    crossAxisSpacing: 16,
+    mainAxisExtent: 130, // fixed height — no more aspect-ratio guessing
+  ),
+  itemBuilder: (context, index) => cards[index],
+);  }
 }

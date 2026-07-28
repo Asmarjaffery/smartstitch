@@ -113,7 +113,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     // input field doesn't even get cleared on a blocked message).
     if (_controller.containsPersonalInfo(text)) {
       AppHelpers.showError(
-        'Personal number, address ya contact detail share karna allowed nahi hai. Sirf order se related baat karein.',
+        'Sharing personal number, address, or contact details is not allowed. Please keep the conversation order-related only.',
       );
       return;
     }

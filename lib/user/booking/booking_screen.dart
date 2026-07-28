@@ -560,58 +560,71 @@ class _BottomBar extends StatelessWidget {
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Estimated Price',
-                style: AppTextStyles.caption
-                    .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
-              ),
-              const SizedBox(height: 2),
-              // A design image / instructions means the artist will price
-              // this manually — show that instead of a number so the
-              // customer doesn't think this figure is what they'll pay.
-              Obx(() {
-                if (ctrl.requiresArtistQuote) {
+          Flexible(
+            flex: 3,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Estimated Price',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption
+                      .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
+                ),
+                const SizedBox(height: 2),
+                Obx(() {
+                  if (ctrl.requiresArtistQuote) {
+                    return Text(
+                      'Pending artist quote',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+                    );
+                  }
+                  final base = ctrl.selectedService.value?.basePrice ?? 0;
                   return Text(
-                    'Pending artist quote',
+                    ctrl.selectedService.value != null
+                        ? 'PKR ${base.toInt()}'
+                        : 'PKR 0',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.h4.copyWith(color: AppColors.primary),
                   );
-                }
-                final base = ctrl.selectedService.value?.basePrice ?? 0;
-                return Text(
-                  ctrl.selectedService.value != null
-                      ? 'PKR ${base.toInt()}'
-                      : 'PKR 0',
-                  style: AppTextStyles.h4.copyWith(color: AppColors.primary),
-                );
-              }),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                }),
+                TextButton(
+                  onPressed: () {},
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'View Details',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.primary),
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down_rounded,
+                          color: AppColors.primary, size: 14),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      'View Details',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.primary),
-                    ),
-                    const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.primary, size: 14),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
+            flex: 2,
             child: Obx(() => SizedBox(
                   height: 54,
                   child: ElevatedButton(
@@ -635,6 +648,7 @@ class _BottomBar extends StatelessWidget {
                           },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       shape: const RoundedRectangleBorder(
                           borderRadius: AppRadius.medium),
                     ),
@@ -642,13 +656,18 @@ class _BottomBar extends StatelessWidget {
                         ? const CircularProgressIndicator(color: Colors.white)
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                'Next Step',
-                                style: AppTextStyles.labelLarge
-                                    .copyWith(color: Colors.white),
+                              Flexible(
+                                child: Text(
+                                  'Next Step',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.labelLarge
+                                      .copyWith(color: Colors.white),
+                                ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               const Icon(Icons.arrow_forward_rounded,
                                   color: Colors.white, size: 18),
                             ],

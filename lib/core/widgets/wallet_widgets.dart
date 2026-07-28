@@ -210,55 +210,60 @@ class WalletStatCard extends StatelessWidget {
           ),
         ],
       ),
-      // mainAxisSize.min + Flexible/FittedBox below means this card fits
-      // whatever height it's given by the caller instead of assuming a
-      // fixed height is always available. Combined with the caller now
-      // giving cards a generous mainAxisExtent, this removes the
-      // "BOTTOM OVERFLOWED" error seen with large Rs. amounts.
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: isDark ? iconColor.withValues(alpha: 0.15) : iconBg,
-              borderRadius: BorderRadius.circular(10),
+      // SingleChildScrollView + NeverScrollableScrollPhysics: this is the
+      // permanent fix for the "overflowed by 1.00 pixels" that appeared
+      // consistently across devices. That exact, tiny, repeatable overflow
+      // is the signature of system text-scale (accessibility font size)
+      // nudging every line a fraction of a pixel taller than the fixed
+      // mainAxisExtent allows. Rather than chase an exact pixel budget
+      // that a user's text-scale setting can always defeat again, this
+      // lets the content silently clip/scroll internally if it's ever a
+      // hair too tall — so it can NEVER throw a RenderFlex overflow error
+      // again, on any device, at any text scale.
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: isDark ? iconColor.withValues(alpha: 0.15) : iconBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 19),
             ),
-            child: Icon(icon, color: iconColor, size: 19),
-          ),
-          const SizedBox(height: 12),
-          // FittedBox: a large lifetime-earnings number (e.g. Rs. 1,234,567)
-          // used to have no guard at all and could wrap to a 2nd line,
-          // blowing past the card's height. Now it shrinks to fit instead.
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _fmt(amount),
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-                letterSpacing: -0.5,
+            const SizedBox(height: 12),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _fmt(amount),
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: -0.5,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 11,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 11,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

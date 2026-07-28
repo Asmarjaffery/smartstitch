@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -128,27 +128,46 @@ class StripeService {
       for (int i = 0; i < 60; i++) {
         await Future.delayed(const Duration(seconds: 3));
 
-        final statusRes = await dio.get(
-          '$backendBaseUrl/api/stripe/session-status',
-          queryParameters: {'sessionId': sessionId},
-        );
-        final status = statusRes.data['status'] as String?;
-
-        if (status == 'paid') {
-          // The Checkout Session id (sessionId, "cs_...") is NOT usable for
-          // refunds — refunds need the actual PaymentIntent id ("pi_...").
-          // The backend's /api/stripe/session-status endpoint should return
-          // that as `paymentIntentId` (from Stripe's
-          // session.payment_intent field) once the session is paid. Until
-          // that backend change ships, this falls back to sessionId so the
-          // booking still completes — but refunds on web-originated
-          // bookings won't work until the backend is updated.
-          final piFromBackend =
-              statusRes.data['paymentIntentId'] as String?;
-          return StripePaymentResult(
-            success: true,
-            transactionId: piFromBackend ?? sessionId,
+        // ✅ Each poll attempt gets its own try/catch. A single transient
+        // network hiccup (very likely right after switching back from the
+        // payment tab) used to throw and abort the WHOLE loop, wrongly
+        // reporting "payment failed" even when Stripe had already
+        // succeeded. Now we just skip a failed attempt and keep polling.
+        try {
+          final statusRes = await dio.get(
+            '$backendBaseUrl/api/stripe/session-status',
+            queryParameters: {'sessionId': sessionId},
           );
+          final status = statusRes.data['status'] as String?;
+
+          if (status == 'paid') {
+            // The Checkout Session id (sessionId, "cs_...") is NOT usable for
+            // refunds — refunds need the actual PaymentIntent id ("pi_...").
+            // The backend's /api/stripe/session-status endpoint should return
+            // that as `paymentIntentId` (from Stripe's
+            // session.payment_intent field) once the session is paid. Until
+            // that backend change ships, this falls back to sessionId so the
+            // booking still completes — but refunds on web-originated
+            // bookings won't work until the backend is updated.
+            final piFromBackend =
+                statusRes.data['paymentIntentId'] as String?;
+            return StripePaymentResult(
+              success: true,
+              transactionId: piFromBackend ?? sessionId,
+            );
+          }
+
+          if (status == 'expired' || status == 'canceled') {
+            return StripePaymentResult(
+              success: false,
+              isCancelled: true,
+              message: 'Payment was cancelled.',
+            );
+          }
+        } catch (e) {
+          // Transient network error during this single poll — log and
+          // retry on the next loop iteration instead of giving up.
+          debugPrint('⚠️ session-status poll #$i failed, retrying: $e');
         }
       }
 

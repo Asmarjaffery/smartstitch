@@ -63,12 +63,21 @@ class PortfolioCard extends GetView<ArtistPortfolioController> {
               ),
               boxShadow: AppShadows.card(isDark),
             ),
+            // Column, NOT split by fixed flex ratios. The details block
+            // below sizes itself to whatever its content actually needs
+            // (mainAxisSize.min), and the image simply takes whatever
+            // height is left over via Expanded. This means the details
+            // block can NEVER be squeezed smaller than its content
+            // requires — which is what caused the overflow before, when
+            // both image and details were forced into a fixed 6:5 flex
+            // split regardless of how much text/buttons needed to fit.
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                /// IMAGE
+                /// IMAGE — fills whatever space remains after the
+                /// details block below claims what it needs.
                 Expanded(
-                  flex: 6,
                   child: Stack(
                     children: [
                       Positioned.fill(
@@ -154,119 +163,118 @@ class PortfolioCard extends GetView<ArtistPortfolioController> {
                   ),
                 ),
 
-                /// DETAILS — fixed to never overflow, regardless of the
-                /// card's height (works across all grid aspect ratios).
-                Expanded(
-                  flex: 5,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              category,
+                /// DETAILS — natural height, never force-squeezed.
+                /// mainAxisSize.min means this Column only ever takes
+                /// exactly as much vertical space as its children need.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        category,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.h5.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Price — "Rs." instead of ₹, comma-formatted.
+                      Text(
+                        "Rs. ${_formatPrice(price)}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.h5.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+
+                      // Fixed spacing instead of Spacer(): Spacer needs
+                      // a bounded parent height to expand into, which
+                      // conflicts with mainAxisSize.min sizing-to-content.
+                      // A fixed gap keeps the layout predictable and
+                      // measurable regardless of parent constraints.
+                      const SizedBox(height: 8),
+
+                      // Rating + Orders — compact single row.
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            size: 15,
+                            color: Colors.amber,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            rating.toStringAsFixed(1),
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(
+                            Icons.shopping_bag_outlined,
+                            size: 15,
+                            color: AppColors.info,
+                          ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              "$orders Orders",
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: AppTextStyles.bodySmall,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.h5.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 34,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Get.to(
+                              () => const PortfolioDetailsScreen(),
+                              arguments: service,
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.visibility_outlined,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            "View Details",
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            padding: EdgeInsets.zero,
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppRadius.medium,
                             ),
-                            const SizedBox(height: 6),
-
-                            // Price — "Rs." instead of ₹, comma-formatted.
-                            Text(
-                              "Rs. ${_formatPrice(price)}",
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.h5.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-
-                            const Spacer(),
-
-                            // Rating + Orders — compact single row.
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.star_rounded,
-                                  size: 15,
-                                  color: Colors.amber,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  rating.toStringAsFixed(1),
-                                  style: AppTextStyles.bodySmall.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                const Icon(
-                                  Icons.shopping_bag_outlined,
-                                  size: 15,
-                                  color: AppColors.info,
-                                ),
-                                const SizedBox(width: 3),
-                                Expanded(
-                                  child: Text(
-                                    "$orders Orders",
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyles.bodySmall,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 8),
-
-                            SizedBox(
-                              width: double.infinity,
-                              height: 34,
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Get.to(
-                                    () => const PortfolioDetailsScreen(),
-                                    arguments: service,
-                                  );
-                                },
-                                icon: const Icon(
-                                  Icons.visibility_outlined,
-                                  size: 16,
-                                ),
-                                label: const Text(
-                                  "View Details",
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                  padding: EdgeInsets.zero,
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: AppRadius.medium,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

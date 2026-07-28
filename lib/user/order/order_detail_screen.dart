@@ -10,8 +10,10 @@ import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/user/order/order_controller.dart';
 import 'package:smartstitch/routes/routes.dart';
-// ✅ NEW: needed to notify the rider when customer taps "Ask AI to Call Rider"
+// ✅ needed to notify the rider when customer taps "Ask AI to Call Rider"
 import 'package:smartstitch/services/notification_service.dart';
+// ✅ opens the device dialer directly on the rider's number
+import 'package:url_launcher/url_launcher.dart';
 
 class OrderDetailScreen extends StatefulWidget {
   const OrderDetailScreen({super.key});
@@ -56,7 +58,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-      // ✅ Agar riderId empty hai tou don't check (rider not assigned yet)
+      // ✅ Skip the check if riderId is empty (rider not assigned yet)
       if (riderId.isEmpty) {
         debugPrint('⚠️ Rider not assigned yet for order: $orderId');
         return;
@@ -71,14 +73,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           .limit(1)
           .get();
 
-      // ✅ Agar review pehle se exist karta hai tou popup na dikha
+      // ✅ Don't show the popup if a review already exists
       if (existingReview.docs.isNotEmpty) {
         debugPrint('✅ Review already exists for order: $orderId with rider: $riderId');
         _reviewShown = true;
         return;
       }
 
-      // ✅ Agar review nahi hai tou popup dikha
+      // ✅ Show the popup if no review exists
       if (mounted && !_reviewShown) {
         _showReviewPopup(OrderController.to.selectedOrder.value!);
       }
@@ -130,6 +132,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
             children: [
               _OrderHeader(order: order),
               const SizedBox(height: 16),
+              // Delivery Exception (rider-reported failed delivery) —
+              // shown above everything else so it's impossible to miss.
+              // `status` stays `riderAssigned` while this is pending admin
+              // review, so this card is the only signal the customer gets.
+              if (order.isDeliveryFailed) ...[
+                _DeliveryFailedCard(order: order),
+                const SizedBox(height: 16),
+              ],
+              // Custom Design Quote Flow — shown above everything else
+              // while this booking is waiting on the artist, or waiting
+              // on the customer to accept/decline a price.
+              if (order.quoteStatus != QuoteStatus.notRequired) ...[
+                _QuoteStatusCard(order: order),
+                const SizedBox(height: 16),
+              ],
               _SectionCard(
                 title: 'Order Summary',
                 icon: Icons.receipt_long_rounded,
@@ -157,8 +174,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               if (order.status != OrderStatus.cancelled) ...[
                 const Text('Order Tracking', style: AppTextStyles.h4),
                 const SizedBox(height: 16),
-                // ✅ UPDATED: pass orderId + riderId so the "Ask AI to Call
-                // Rider" button can write the call-request flag to Firestore
+                // pass orderId + riderId so the "Ask AI to Call Rider"
+                // button can write the call-request flag to Firestore
                 // and notify the rider directly.
                 Obx(() => _OrderTracker(
                       orderId: order.id,
@@ -195,13 +212,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // ✅ FIXED: Measurements collection docs are keyed by a random
-              // UUID + `userId` field (per-user profile data), NOT by
-              // order.id. Looking them up by order.id always returned "not
-              // found". The order already carries its own snapshot of the
-              // measurements used at checkout time (order.measurements), so
-              // just render that directly — no extra Firestore round trip
-              // needed, and it always matches what the order was placed with.
+              // Measurements collection docs are keyed by a random UUID +
+              // `userId` field (per-user profile data), NOT by order.id.
+              // The order already carries its own snapshot of the
+              // measurements used at checkout time (order.measurements),
+              // so just render that directly.
               _SectionCard(
                 title: 'Measurements',
                 icon: Icons.straighten_rounded,
@@ -307,11 +322,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 _SectionCard(
                   title: 'Rider',
                   icon: Icons.delivery_dining_rounded,
-                  // ✅ UPDATED: "Ask AI to Call Rider" button removed from
-                  // here — it now lives directly under the "Rider Assigned"
-                  // step inside the Order Tracking card above, so it's
-                  // unambiguous which rider it refers to. This section now
-                  // just shows rider info.
+                  // "Ask AI to Call Rider" button lives under the "Rider
+                  // Assigned" step inside the Order Tracking card above —
+                  // this section just shows rider info.
                   child: Obx(() => Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -353,7 +366,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       value: 'Rs ${order.totalAmount.toInt()}',
                     ),
                     const Divider(height: 16),
-                    // ✅ FIXED: Show proper payment breakdown with three components
+                    // Show proper payment breakdown with three components
                     _AmountChipsRow(order: order),
                     if (order.payment != null) ...[
                       const SizedBox(height: 8),
@@ -370,65 +383,111 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              if (OrderController.to.canCancel(order.status))
-                Obx(() => SizedBox(
+              // Normal cancel / refund / reschedule actions only make
+              // sense once there's an actual fixed price on the booking —
+              // while a custom-design quote is pending or awaiting the
+              // customer's decision, the dedicated Accept/Decline card
+              // above (see _QuoteStatusCard) is the only relevant action.
+              if (order.quoteStatus == QuoteStatus.notRequired ||
+                  order.quoteStatus == QuoteStatus.accepted) ...[
+                if (OrderController.to.canCancel(order.status))
+                  Obx(() => SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: OrderController.to.isLoading.value
+                              ? null
+                              : () => _confirmCancel(order.id),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.error),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: AppRadius.medium,
+                            ),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Cancel Order',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      )),
+                // If a refund request already exists for this order, show
+                // its status card instead of the "Request Refund" button.
+                //
+                // Refund + Reschedule also show up when the rider has
+                // reported a failed delivery — not just when
+                // `status == cancelled` — since a failed delivery leaves
+                // `status` stuck at `riderAssigned`.
+                if (order.status == OrderStatus.cancelled ||
+                    order.isDeliveryFailed) ...[
+                  const SizedBox(height: 12),
+                  Obx(() {
+                    final refund = OrderController.to.selectedRefundRequest.value;
+
+                    if (refund != null) {
+                      return _RefundRequestCard(refund: refund);
+                    }
+
+                    // ✅ NEW: "Request Refund" is only ever shown for
+                    // card/Stripe payments. COD, wallet, or any other
+                    // payment method never had money captured through
+                    // Stripe/card in a way this refund flow can process,
+                    // so the button — and everything it would take up —
+                    // simply doesn't render for those orders.
+                    final isCardPayment =
+                        OrderController.to.isCardPayment(order.id);
+
+                    if (!isCardPayment) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return SizedBox(
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton(
                         onPressed: OrderController.to.isLoading.value
                             ? null
-                            : () => _confirmCancel(order.id),
+                            : () => _confirmRefund(order.id),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.error),
+                          side: BorderSide(color: theme.colorScheme.primary),
                           shape: const RoundedRectangleBorder(
                             borderRadius: AppRadius.medium,
                           ),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: Text(
-                            'Cancel Order',
+                            'Request Refund',
                             textAlign: TextAlign.center,
+                            style: TextStyle(color: theme.colorScheme.primary),
                           ),
                         ),
                       ),
-                    )),
-              // ✅ UPDATED: If a refund request already exists for this
-              // order, show its status card (with the Order ID clearly
-              // visible) instead of the "Request Refund" button, so it's
-              // never ambiguous which order a refund request belongs to
-              // and the customer can't submit a duplicate request.
-              if (order.status == OrderStatus.cancelled) ...[
-                const SizedBox(height: 12),
-                Obx(() {
-                  final refund = OrderController.to.selectedRefundRequest.value;
-
-                  if (refund != null) {
-                    return _RefundRequestCard(refund: refund);
-                  }
-
-                  return SizedBox(
+                    );
+                  }),
+                  // Reschedule Order — lets the customer put a cancelled
+                  // OR delivery-failed order back in front of the artist
+                  // with a new date instead of starting a brand new
+                  // booking. Available regardless of payment method.
+                  const SizedBox(height: 12),
+                  SizedBox(
                     width: double.infinity,
                     height: 52,
-                    child: OutlinedButton(
-                      onPressed: OrderController.to.isLoading.value
-                          ? null
-                          : () => _confirmRefund(order.id),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: theme.colorScheme.primary),
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: AppRadius.medium,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Request Refund',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: theme.colorScheme.primary),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
+                    child: Obx(() => ElevatedButton.icon(
+                          onPressed: OrderController.to.isLoading.value
+                              ? null
+                              : () => _confirmReschedule(order.id),
+                          icon: const Icon(Icons.event_repeat_rounded),
+                          label: const Text('Reschedule Order'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: AppRadius.medium,
+                            ),
+                          ),
+                        )),
+                  ),
+                ],
               ],
               const SizedBox(height: 40),
             ],
@@ -443,6 +502,56 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     return '${diff.inHours}h ago';
+  }
+
+  // Reschedule flow — pick a new date, then confirm before writing.
+  Future<void> _confirmReschedule(String orderId) async {
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 90)),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      // ignore: use_build_context_synchronously
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (pickedTime == null || !mounted) return;
+
+    final newDate = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Reschedule Order?'),
+        content: Text(
+          'The order will be rescheduled to ${newDate.day}/${newDate.month}/${newDate.year} '
+          '${TimeOfDay.fromDateTime(newDate).format(context)} and sent back to the artist.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              OrderController.to.rescheduleOrder(orderId, newDate);
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmCancel(String orderId) {
@@ -474,11 +583,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  // ✅ FIXED: OrderController.requestRefund expects
-  // (orderId, CancellationReason reason, String description) — this now
-  // lets the customer pick a proper reason from a dropdown plus an
-  // optional free-text description, instead of passing a raw String
-  // where an enum was expected (which didn't compile before).
+  // OrderController.requestRefund expects (orderId, CancellationReason
+  // reason, String description) — lets the customer pick a proper reason
+  // from a dropdown plus an optional free-text description.
   void _confirmRefund(String orderId) {
     final descCtrl = TextEditingController();
     CancellationReason selectedReason = CancellationReason.changedMind;
@@ -495,7 +602,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Refund ki wajah select karein:'),
+                  const Text('Select a reason for the refund:'),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<CancellationReason>(
                     initialValue: selectedReason,
@@ -590,6 +697,258 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 }
 
+// ─── Delivery Failed Card ──────────────────────────────────────────────────
+// The only signal the customer gets that a delivery attempt was reported
+// as failed by the rider — `status` stays `riderAssigned` until admin
+// resolves the exception, so this card has to surface it directly.
+
+class _DeliveryFailedCard extends StatelessWidget {
+  final OrderModel order;
+  const _DeliveryFailedCard({required this.order});
+
+  String _reasonLabel(String? reason) {
+    switch (reason) {
+      case 'customerDidNotAnswer':
+        return 'You did not answer the call or door.';
+      case 'wrongAddress':
+        return 'The address was incorrect or could not be found.';
+      case 'customerRefused':
+        return 'Delivery was refused.';
+      default:
+        return 'The rider could not complete the delivery.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: AppRadius.large,
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: Colors.orange, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Delivery Failed',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _reasonLabel(order.deliveryExceptionReason),
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: Colors.orange.shade800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This is under admin review. You can request a refund or reschedule the order below.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: Colors.orange.shade700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Custom Design Quote Status Card ───────────────────────────────────────
+// Shown at the top of the detail screen for any booking that's part of the
+// design-image/instructions quote flow (see QuoteStatus). Three states:
+// waiting on the artist, waiting on the customer's decision, or accepted.
+
+class _QuoteStatusCard extends StatelessWidget {
+  final OrderModel order;
+  const _QuoteStatusCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primary = AppColors.primary;
+    final primarySoft = isDark ? AppColors.darkSurface2 : AppColors.primarySoft;
+
+    switch (order.quoteStatus) {
+      case QuoteStatus.pendingQuote:
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: primarySoft,
+            borderRadius: AppRadius.large,
+            border: Border.all(color: primary.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.hourglass_top_rounded, color: primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Waiting for Artist',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: primary, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'The artist is reviewing your design/instructions and will send a price soon.',
+                      style: AppTextStyles.bodySmall.copyWith(color: primary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case QuoteStatus.quoted:
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: AppRadius.large,
+            border: Border.all(color: primary.withValues(alpha: 0.3)),
+            boxShadow: AppShadows.soft(primary),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.local_offer_rounded, color: primary, size: 22),
+                  const SizedBox(width: 10),
+                  Text('Artist Sent a Price',
+                      style: AppTextStyles.labelLarge.copyWith(
+                          color: isDark
+                              ? AppColors.darkTextPrimary
+                              : AppColors.lightTextPrimary,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Quoted Price',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary)),
+                  Text('Rs ${(order.quotedPrice ?? 0).toInt()}',
+                      style: AppTextStyles.h4.copyWith(color: primary)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _confirmDecline(context, order),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.error),
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: AppRadius.medium),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Decline',
+                          style: TextStyle(color: AppColors.error)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => OrderController.to.acceptQuote(order),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: AppRadius.medium),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Accept & Pay',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+
+      case QuoteStatus.accepted:
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.success.withValues(alpha: isDark ? 0.18 : 0.1),
+            borderRadius: AppRadius.medium,
+            border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: AppColors.success, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Quote accepted — Rs ${(order.quotedPrice ?? order.servicePrice).toInt()} paid.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.success),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case QuoteStatus.declined:
+      case QuoteStatus.notRequired:
+        return const SizedBox();
+    }
+  }
+
+  void _confirmDecline(BuildContext context, OrderModel order) {
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Decline Quote'),
+        content: const Text(
+          'Are you sure you want to decline this price? The booking will be cancelled.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Get.back();
+              await OrderController.to.declineQuote(order);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Yes, Decline',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Review Popup ─────────────────────────────────────────────────────────────
 
 class _ReviewPopup extends StatefulWidget {
@@ -624,9 +983,8 @@ class _ReviewPopupState extends State<_ReviewPopup> {
       final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
       final riderId = widget.order.riderId;
 
-      // ✅ FIXED: resolve rider name at submission time so it's always
-      // saved with the review itself, instead of relying on a fallback
-      // Firestore lookup later (which was returning empty/'Rider').
+      // Resolve rider name at submission time so it's always saved with
+      // the review itself, instead of relying on a fallback lookup later.
       String? riderName = OrderController.to.selectedRiderName.value;
       if (riderName.isEmpty && riderId != null && riderId.isNotEmpty) {
         try {
@@ -642,7 +1000,7 @@ class _ReviewPopupState extends State<_ReviewPopup> {
         }
       }
 
-      // ✅ Review data to save
+      // Review data to save
       final reviewData = {
         'orderId': widget.order.id,
         'customerId': userId,
@@ -656,12 +1014,12 @@ class _ReviewPopupState extends State<_ReviewPopup> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // ✅ Save to reviews collection
+      // Save to reviews collection
       await FirebaseFirestore.instance
           .collection('reviews')
           .add(reviewData);
 
-      // ✅ FIXED: Null check for riderId
+      // Null check for riderId
       if (riderId != null && riderId.isNotEmpty) {
         await FirebaseFirestore.instance
             .collection('riders')
@@ -837,7 +1195,7 @@ class _AmountChipsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // ✅ FIXED: Combine Artist + Platform (user/artist share) and show Delivery separate
+    // Combine Artist + Platform (user/artist share) and show Delivery separate
     final artistShare = order.artistAmount.toInt() + order.platformCommission.toInt();
 
     return Wrap(
@@ -846,7 +1204,7 @@ class _AmountChipsRow extends StatelessWidget {
       children: [
         _AmountChip(
           label: 'Artist Share',
-          value: artistShare,  // ✅ Artist + Platform combined
+          value: artistShare,  // Artist + Platform combined
           color: theme.colorScheme.primary,
           icon: Icons.palette_rounded,
         ),
@@ -1009,17 +1367,17 @@ class _OrderHeader extends StatelessWidget {
 // ─── Order Tracker ────────────────────────────────────────────────────────────
 
 class _OrderTracker extends StatelessWidget {
-  // ✅ NEW: needed to write the call-request flag to the right booking doc
-  // and to know which rider to notify.
+  // needed to write the call-request flag to the right booking doc and to
+  // know which rider to notify.
   final String orderId;
   final String? riderId;
   final OrderStatus status;
   final bool isSelfPickup;
-  // ✅ rider phone, used to show the "Ask AI to Call Rider" button
-  // directly under the "Rider Assigned" step.
+  // rider phone, used to show the "Ask AI to Call Rider" button directly
+  // under the "Rider Assigned" step.
   final String? riderPhone;
-  // ✅ the rider live-location map, rendered directly under the
-  // "Rider Assigned" step instead of floating in its own card below.
+  // the rider live-location map, rendered directly under the "Rider
+  // Assigned" step instead of floating in its own card below.
   final Widget? riderLocationWidget;
   const _OrderTracker({
     required this.orderId,
@@ -1030,9 +1388,9 @@ class _OrderTracker extends StatelessWidget {
     this.riderLocationWidget,
   });
 
-  // ✅ NEW: writes the call-request flag on the booking doc + sends a
-  // notification to the rider, then opens the AI chat screen exactly as
-  // before.
+  // Opens the device dialer on the rider's number directly, and still
+  // logs the request + notifies the rider so they see a missed-call
+  // context even if the call doesn't connect.
   Future<void> _askAiToCallRider(BuildContext context) async {
     try {
       await FirebaseFirestore.instance
@@ -1057,13 +1415,28 @@ class _OrderTracker extends StatelessWidget {
       debugPrint('Call request notify error: $e');
     }
 
-    Get.toNamed(
-      AppRoutes.aiChat,
-      arguments: {
-        'type': 'callRider',
-        'phone': riderPhone,
-      },
-    );
+    // Actually place the call.
+    if (riderPhone != null && riderPhone!.isNotEmpty) {
+      final callUri = Uri(scheme: 'tel', path: riderPhone);
+      final canCall = await canLaunchUrl(callUri);
+      if (canCall) {
+        await launchUrl(callUri);
+        return;
+      }
+    }
+
+    // Fallback: if we somehow can't dial (no phone number, or simulator/
+    // web build without a dialer), keep the old AI-chat hand-off so the
+    // customer still has a way to reach the rider.
+    if (context.mounted) {
+      Get.toNamed(
+        AppRoutes.aiChat,
+        arguments: {
+          'type': 'callRider',
+          'phone': riderPhone,
+        },
+      );
+    }
   }
 
   @override
@@ -1094,8 +1467,8 @@ class _OrderTracker extends StatelessWidget {
     final currentStep =
         isSelfPickup && absoluteStep >= 4 ? absoluteStep - 1 : absoluteStep;
 
-    // ✅ show the call button only when the order is currently sitting
-    // at the "Rider Assigned" step and we actually have a phone number.
+    // Show the call button only when the order is currently sitting at
+    // the "Rider Assigned" step and we actually have a phone number.
     final showCallRiderButton = !isSelfPickup &&
         status == OrderStatus.riderAssigned &&
         riderPhone != null &&
@@ -1177,7 +1550,7 @@ class _OrderTracker extends StatelessWidget {
                   child: SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () => _askAiToCallRider(context), // ✅ UPDATED
+                      onPressed: () => _askAiToCallRider(context),
                       icon: const Icon(Icons.auto_awesome_rounded, size: 16),
                       label: const Text('Ask AI to Call Rider'),
                       style: OutlinedButton.styleFrom(
@@ -1191,9 +1564,8 @@ class _OrderTracker extends StatelessWidget {
                     ),
                   ),
                 ),
-              // rider live-location map, also pinned directly under
-              // the "Rider Assigned" step (moved out of its own separate
-              // card below the tracker) so everything about the rider is
+              // rider live-location map, also pinned directly under the
+              // "Rider Assigned" step so everything about the rider is
               // grouped in one clear place.
               if (isRiderAssignedStep && riderLocationWidget != null)
                 Padding(
@@ -1214,7 +1586,7 @@ class _TrackStep {
   const _TrackStep({required this.icon, required this.label});
 }
 
-// ─── Rider Live Location (now embedded under the "Rider Assigned" step) ──────
+// ─── Rider Live Location (embedded under the "Rider Assigned" step) ──────
 
 class _RiderLiveLocation extends StatelessWidget {
   final Map<String, dynamic>? riderLocation;
@@ -1435,9 +1807,9 @@ class _MeasChip extends StatelessWidget {
 }
 
 // ─── Refund Request Info Card ──────────────────────────────────────────────
-// ✅ NEW: Shows which order a refund request belongs to, plus its reason,
-// status, amount and date — so it's never ambiguous which order the
-// customer requested a refund for.
+// Shows which order a refund request belongs to, plus its reason, status,
+// amount and date — so it's never ambiguous which order the customer
+// requested a refund for.
 
 class _RefundRequestCard extends StatelessWidget {
   final RefundRequestModel refund;
@@ -1485,7 +1857,7 @@ class _RefundRequestCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ Ye clearly dikhata hai ke ye refund request KIS order ke liye hai
+          // This clearly shows which order this refund request belongs to
           _InfoRow(
             label: 'Order ID',
             value: '#${refund.orderId.substring(0, idLen).toUpperCase()}',

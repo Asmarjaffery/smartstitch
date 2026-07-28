@@ -127,7 +127,7 @@ class ArtistWalletScreen extends StatelessWidget {
                       ),
                     );
                   }
- if (txns.isEmpty) {
+                  if (txns.isEmpty) {
                     return const WalletEmptyState(
                       icon: Icons.receipt_long_outlined,
                       title: 'No Transactions Yet',
@@ -280,6 +280,8 @@ class _TransactionCard extends StatelessWidget {
         return Icons.card_giftcard_rounded;
       case TransactionType.refund:
         return Icons.replay_rounded;
+      case TransactionType.compensation:
+        return Icons.support_agent_rounded;
     }
   }
 
@@ -293,13 +295,16 @@ class _TransactionCard extends StatelessWidget {
         return WalletColors.purple;
       case TransactionType.refund:
         return WalletColors.blue;
+      case TransactionType.compensation:
+        return WalletColors.blue;
     }
   }
 
   bool get _isCredit =>
       tx.type == TransactionType.earning ||
       tx.type == TransactionType.bonus ||
-      tx.type == TransactionType.refund;
+      tx.type == TransactionType.refund ||
+      tx.type == TransactionType.compensation;
 
   @override
   Widget build(BuildContext context) {

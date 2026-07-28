@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "al-hamra-services"
-  }
+    "default": "smart-stitch-8e4ad"
+  },
+  "targets": {},
+  "etags": {}
 }

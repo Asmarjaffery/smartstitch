@@ -3,8 +3,12 @@ import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/models/order_model.dart';
 
-/// The five customer-facing states from the Cancellation & Refund spec.
+/// The customer-facing states shown as a badge. The five original states
+/// come from the Cancellation & Refund spec; `pendingQuote` and `quoted`
+/// were added for the Custom Design Quote Flow (see QuoteStatus).
 enum BookingDisplayStatus {
+  pendingQuote,
+  quoted,
   paid,
   cancelled,
   refundRequested,
@@ -15,6 +19,10 @@ enum BookingDisplayStatus {
 extension BookingDisplayStatusX on BookingDisplayStatus {
   String get label {
     switch (this) {
+      case BookingDisplayStatus.pendingQuote:
+        return 'Awaiting Quote';
+      case BookingDisplayStatus.quoted:
+        return 'Quote Received';
       case BookingDisplayStatus.paid:
         return 'Paid';
       case BookingDisplayStatus.cancelled:
@@ -30,6 +38,10 @@ extension BookingDisplayStatusX on BookingDisplayStatus {
 
   Color get color {
     switch (this) {
+      case BookingDisplayStatus.pendingQuote:
+        return const Color(0xFF8B5CF6); // Purple
+      case BookingDisplayStatus.quoted:
+        return const Color(0xFFF59E0B); // Orange
       case BookingDisplayStatus.paid:
         return const Color(0xFF2563EB); // Blue
       case BookingDisplayStatus.cancelled:
@@ -45,6 +57,10 @@ extension BookingDisplayStatusX on BookingDisplayStatus {
 
   IconData get icon {
     switch (this) {
+      case BookingDisplayStatus.pendingQuote:
+        return Icons.hourglass_top_rounded;
+      case BookingDisplayStatus.quoted:
+        return Icons.local_offer_rounded;
       case BookingDisplayStatus.paid:
         return Icons.verified_rounded;
       case BookingDisplayStatus.cancelled:
@@ -59,10 +75,22 @@ extension BookingDisplayStatusX on BookingDisplayStatus {
   }
 }
 
-/// Derives which of the 5 badges to show for a given [OrderModel]. Returns
-/// `null` when the booking isn't paid yet and hasn't been cancelled — in
-/// that case just show the normal in-progress `OrderStatus` label instead.
+/// Derives which badge to show for a given [OrderModel]. Returns `null`
+/// when the booking isn't paid yet, isn't in the quote flow, and hasn't
+/// been cancelled — in that case just show the normal in-progress
+/// `OrderStatus` label instead.
 BookingDisplayStatus? resolveOrderDisplayStatus(OrderModel order) {
+  // ✅ Custom Design Quote Flow — checked first since a booking sitting
+  // with the artist for pricing (or waiting on the customer's decision)
+  // isn't paid yet and shouldn't fall through to the normal OrderStatus
+  // label.
+  if (order.quoteStatus == QuoteStatus.pendingQuote) {
+    return BookingDisplayStatus.pendingQuote;
+  }
+  if (order.quoteStatus == QuoteStatus.quoted) {
+    return BookingDisplayStatus.quoted;
+  }
+
   final isRefunded =
       order.paymentStatus == PaymentStatus.refunded ||
       order.refundStatus == RefundStatus.approved;

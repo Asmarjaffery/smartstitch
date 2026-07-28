@@ -63,17 +63,16 @@ class _LoginScreenState extends State<LoginScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final auth = AuthController.to;
 
-    // ✅ Theme-aware colors
     final bgColor = isDark ? AppColors.darkBackground : AppColors.lightBackground;
     final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final textPrimary = isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
     final textSecondary = isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
 
     return Scaffold(
-      backgroundColor: bgColor, // ✅ Theme-aware
+      backgroundColor: bgColor,
       body: Stack(
         children: [
-          // Background decorative blobs (Theme-aware)
+          // Background decorative blobs
           Positioned(
             top: -100,
             right: -70,
@@ -82,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen>
               height: 280,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isDark ? AppColors.primary.withValues(alpha: 0.05) : AppColors.primary.withValues(alpha: 0.08), // ✅
+                color: isDark ? AppColors.primary.withValues(alpha: 0.05) : AppColors.primary.withValues(alpha: 0.08),
               ),
             ),
           ),
@@ -94,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen>
               height: 200,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isDark ? AppColors.primaryDark.withValues(alpha: 0.03) : AppColors.primaryDark.withValues(alpha: 0.05), // ✅
+                color: isDark ? AppColors.primaryDark.withValues(alpha: 0.03) : AppColors.primaryDark.withValues(alpha: 0.05),
               ),
             ),
           ),
@@ -106,7 +105,36 @@ class _LoginScreenState extends State<LoginScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 60),
+                  // ✅ BACK BUTTON
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
+                    child: GestureDetector(
+                      onTap: () => Get.toNamed(AppRoutes.customerHome),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.darkSurface : Colors.white,
+                          borderRadius: AppRadius.medium,
+                          border: Border.all(
+                            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 18,
+                          color: textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
 
                   // ─── Logo / Title (Animated) ───────────────────────────────────────
                   FadeTransition(
@@ -131,14 +159,14 @@ class _LoginScreenState extends State<LoginScreen>
                             Text(
                               'Smart Stitch',
                               style: AppTextStyles.h2.copyWith(
-                                color: textPrimary, // ✅ Theme-aware
+                                color: textPrimary,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Welcome back!',
-                              style: AppTextStyles.bodyMedium.copyWith(color: textSecondary), // ✅
+                              style: AppTextStyles.bodyMedium.copyWith(color: textSecondary),
                             ),
                           ],
                         ),
@@ -159,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen>
                           // ─── Email Field ────────────────────────────────────────
                           Text(
                             'Email',
-                            style: AppTextStyles.labelLarge.copyWith(color: textPrimary), // ✅
+                            style: AppTextStyles.labelLarge.copyWith(color: textPrimary),
                           ),
                           const SizedBox(height: 8),
                           _LoginField(
@@ -167,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen>
                             hint: 'Enter your email',
                             icon: Icons.email_outlined,
                             keyboardType: TextInputType.emailAddress,
-                            isDark: isDark, // ✅
+                            isDark: isDark,
                           ),
 
                           const SizedBox(height: 20),
@@ -175,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen>
                           // ─── Password Field ─────────────────────────────────────
                           Text(
                             'Password',
-                            style: AppTextStyles.labelLarge.copyWith(color: textPrimary), // ✅
+                            style: AppTextStyles.labelLarge.copyWith(color: textPrimary),
                           ),
                           const SizedBox(height: 8),
                           _LoginField(
@@ -187,11 +215,11 @@ class _LoginScreenState extends State<LoginScreen>
                               onTap: () => setState(() => _obscurePassword = !_obscurePassword),
                               child: Icon(
                                 _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                                color: textSecondary, // ✅
+                                color: textSecondary,
                                 size: 20,
                               ),
                             ),
-                            isDark: isDark, // ✅
+                            isDark: isDark,
                           ),
 
                           const SizedBox(height: 12),
@@ -219,7 +247,7 @@ class _LoginScreenState extends State<LoginScreen>
                               email: _emailController.text.trim(),
                               password: _passwordController.text,
                             ),
-                            isDark: isDark, // ✅
+                            isDark: isDark,
                           )),
 
                           const SizedBox(height: 16),
@@ -228,7 +256,7 @@ class _LoginScreenState extends State<LoginScreen>
                           Obx(() => _GoogleButton(
                             isLoading: auth.isGoogleLoading.value,
                             onPressed: auth.signInWithGoogle,
-                            isDark: isDark, // ✅
+                            isDark: isDark,
                           )),
 
                           const SizedBox(height: 32),
@@ -240,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen>
                               children: [
                                 Text(
                                   "Don't have an account? ",
-                                  style: AppTextStyles.bodyMedium.copyWith(color: textSecondary), // ✅
+                                  style: AppTextStyles.bodyMedium.copyWith(color: textSecondary),
                                 ),
                                 GestureDetector(
                                   onTap: () => Get.toNamed(AppRoutes.register),
@@ -275,7 +303,7 @@ class _LoginField extends StatefulWidget {
   final TextInputType? keyboardType;
   final bool obscureText;
   final Widget? suffixIcon;
-  final bool isDark; // ✅
+  final bool isDark;
 
   const _LoginField({
     required this.controller,
@@ -284,7 +312,7 @@ class _LoginField extends StatefulWidget {
     this.keyboardType,
     this.obscureText = false,
     this.suffixIcon,
-    required this.isDark, // ✅
+    required this.isDark,
   });
 
   @override
@@ -315,19 +343,19 @@ class _LoginFieldState extends State<_LoginField> {
           controller: widget.controller,
           keyboardType: widget.keyboardType,
           obscureText: widget.obscureText,
-          style: AppTextStyles.bodyMedium.copyWith(color: textPrimary, fontWeight: FontWeight.w500), // ✅
+          style: AppTextStyles.bodyMedium.copyWith(color: textPrimary, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
             hintText: widget.hint,
-            hintStyle: AppTextStyles.bodyMedium.copyWith(color: textHint), // ✅
-            prefixIcon: Icon(widget.icon, color: textHint, size: 20), // ✅
+            hintStyle: AppTextStyles.bodyMedium.copyWith(color: textHint),
+            prefixIcon: Icon(widget.icon, color: textHint, size: 20),
             suffixIcon: widget.suffixIcon != null
                 ? Padding(padding: const EdgeInsets.only(right: 4), child: widget.suffixIcon)
                 : null,
             filled: true,
-            fillColor: _focused ? primarySoft : bgColor, // ✅
+            fillColor: _focused ? primarySoft : bgColor,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            border: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)), // ✅
-            enabledBorder: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)), // ✅
+            border: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)),
+            enabledBorder: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)),
             focusedBorder: const OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: AppColors.primary, width: 1.8)),
           ),
         ),
@@ -342,9 +370,9 @@ class _LoginButton extends StatefulWidget {
   final IconData icon;
   final bool isLoading;
   final VoidCallback onPressed;
-  final bool isDark; // ✅
+  final bool isDark;
 
-  const _LoginButton({required this.label, required this.icon, required this.isLoading, required this.onPressed, required this.isDark}); // ✅
+  const _LoginButton({required this.label, required this.icon, required this.isLoading, required this.onPressed, required this.isDark});
 
   @override
   State<_LoginButton> createState() => _LoginButtonState();
@@ -382,7 +410,7 @@ class _LoginButtonState extends State<_LoginButton> with SingleTickerProviderSta
           width: double.infinity,
           height: 54,
           decoration: const BoxDecoration(
-            gradient: AppColors.primaryGradient, // ✅ Same gradient (premium)
+            gradient: AppColors.primaryGradient,
             borderRadius: AppRadius.medium,
             boxShadow: AppShadows.primary,
           ),
@@ -408,9 +436,9 @@ class _LoginButtonState extends State<_LoginButton> with SingleTickerProviderSta
 class _GoogleButton extends StatefulWidget {
   final bool isLoading;
   final VoidCallback onPressed;
-  final bool isDark; // ✅
+  final bool isDark;
 
-  const _GoogleButton({required this.isLoading, required this.onPressed, required this.isDark}); // ✅
+  const _GoogleButton({required this.isLoading, required this.onPressed, required this.isDark});
 
   @override
   State<_GoogleButton> createState() => _GoogleButtonState();
@@ -453,9 +481,9 @@ class _GoogleButtonState extends State<_GoogleButton> with SingleTickerProviderS
           width: double.infinity,
           height: 54,
           decoration: BoxDecoration(
-            color: surfaceColor, // ✅ Theme-aware
+            color: surfaceColor,
             borderRadius: AppRadius.medium,
-            border: Border.all(color: borderColor, width: 1.2), // ✅
+            border: Border.all(color: borderColor, width: 1.2),
             boxShadow: AppShadows.soft(AppColors.primary),
           ),
           child: Center(
@@ -464,9 +492,9 @@ class _GoogleButtonState extends State<_GoogleButton> with SingleTickerProviderS
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.g_mobiledata_rounded, color: isDark ? AppColors.primaryLight : AppColors.primary, size: 28), // ✅
+                      Icon(Icons.g_mobiledata_rounded, color: isDark ? AppColors.primaryLight : AppColors.primary, size: 28),
                       const SizedBox(width: 8),
-                      Text('Continue with Google', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)), // ✅
+                      Text('Continue with Google', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)),
                     ],
                   ),
           ),

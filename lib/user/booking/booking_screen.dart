@@ -343,34 +343,13 @@ class BookingScreen extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // ─── Upload Design (multiple — each image adds Rs 200,
-            // doubling with every extra upload: 1 img = 200, 2 = 400,
-            // 3 = 600, ...) ────────────────────────────────────────
-            Row(
-              children: [
-                const _SectionHeader(title: 'Upload Design (Optional)'),
-                const SizedBox(width: 8),
-                Obx(() {
-                  if (ctrl.designImageUrls.isEmpty) return const SizedBox();
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primarySoft,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '+Rs ${ctrl.designImageFee.toInt()}',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
-                    ),
-                  );
-                }),
-              ],
-            ),
+            // ─── Upload Design (multiple images — sent to the artist
+            // for review; the artist sends back a price quote instead of
+            // an automatic fee) ─────────────────────────────────────
+            const _SectionHeader(title: 'Upload Design (Optional)'),
             const SizedBox(height: 6),
             Text(
-              'Each design image adds Rs 200 to your total.',
+              'A design image means the artist will review it and send you a price before you pay.',
               style: AppTextStyles.caption
                   .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
             ),
@@ -473,7 +452,7 @@ class BookingScreen extends StatelessWidget {
                                   Text(
                                     ctrl.designImageUrls.isEmpty
                                         ? 'Upload your design'
-                                        : 'Add another design (+Rs 200)',
+                                        : 'Add another design',
                                     style: AppTextStyles.labelMedium
                                         .copyWith(color: AppColors.primary),
                                   ),
@@ -492,33 +471,10 @@ class BookingScreen extends StatelessWidget {
             const SizedBox(height: 28),
 
             // ─── Special Instructions ──────────────────────────────
-            Row(
-              children: [
-                const _SectionHeader(title: 'Special Instructions (Optional)'),
-                const SizedBox(width: 8),
-                Obx(() {
-                  if (ctrl.specialInstructions.value.trim().isEmpty) {
-                    return const SizedBox();
-                  }
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primarySoft,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '+Rs ${ctrl.specialInstructionsFee.toInt()}',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
-                    ),
-                  );
-                }),
-              ],
-            ),
+            const _SectionHeader(title: 'Special Instructions (Optional)'),
             const SizedBox(height: 6),
             Text(
-              'Adding instructions adds a flat Rs 200 to your total.',
+              'Special instructions mean the artist will review them and send you a price before you pay.',
               style: AppTextStyles.caption
                   .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
             ),
@@ -615,15 +571,20 @@ class _BottomBar extends StatelessWidget {
                     .copyWith(color: Theme.of(context).textTheme.bodySmall?.color),
               ),
               const SizedBox(height: 2),
-              // Includes base price + design-image fee + special
-              // instructions fee, so the customer sees the real running
-              // total as soon as they add either one.
+              // A design image / instructions means the artist will price
+              // this manually — show that instead of a number so the
+              // customer doesn't think this figure is what they'll pay.
               Obx(() {
+                if (ctrl.requiresArtistQuote) {
+                  return Text(
+                    'Pending artist quote',
+                    style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+                  );
+                }
                 final base = ctrl.selectedService.value?.basePrice ?? 0;
-                final total = base + ctrl.extraChargesFee;
                 return Text(
                   ctrl.selectedService.value != null
-                      ? 'PKR ${total.toInt()}'
+                      ? 'PKR ${base.toInt()}'
                       : 'PKR 0',
                   style: AppTextStyles.h4.copyWith(color: AppColors.primary),
                 );

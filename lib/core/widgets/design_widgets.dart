@@ -10,17 +10,19 @@ class StepProgressHeader extends StatelessWidget {
   final bool isDark;
 
   static const List<String> _labels = [
-    'Images',
+    
     'Basic Info',
     'Details',
     'Pricing',
+    'Images',
     'Publish'
   ];
   static const List<IconData> _icons = [
-    Icons.photo_library_outlined,
+  
     Icons.info_outline,
     Icons.checklist_outlined,
     Icons.sell_outlined,
+    Icons.photo_library_outlined,
     Icons.rocket_launch_outlined,
   ];
 

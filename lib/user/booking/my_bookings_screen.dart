@@ -151,7 +151,7 @@ class BookingConfirmScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '${ctrl.designImageUrls.length} image(s) • +Rs ${ctrl.designImageFee.toInt()}',
+                            '${ctrl.designImageUrls.length} image(s) uploaded',
                             style: AppTextStyles.caption
                                 .copyWith(color: AppColors.primary),
                           ),

@@ -12,20 +12,26 @@ import 'package:smartstitch/artist/portfolio/artist_portfolio_screen.dart';
 import 'package:smartstitch/artist/profile/artist_profile_screen.dart';
 import 'package:smartstitch/artist/wallet/artist_wallet_screen.dart';
 import 'package:smartstitch/artist/wallet/artist_wallet_controller.dart';
+import 'package:smartstitch/artist/review/artist_review_screen.dart';
+import 'package:smartstitch/artist/complaint/artist_complaint_screen.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/controllers/chat_controller.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/routes/routes.dart';
 
 class ArtistMainScreen extends StatefulWidget {
-  const ArtistMainScreen({super.key});
+  // 🆕 Lets callers land directly on a specific tab (e.g. Portfolio = 1)
+  // instead of always opening on the Dashboard tab.
+  final int initialIndex;
+
+  const ArtistMainScreen({super.key, this.initialIndex = 0});
 
   @override
   State<ArtistMainScreen> createState() => _ArtistMainScreenState();
 }
 
 class _ArtistMainScreenState extends State<ArtistMainScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex = widget.initialIndex;
 
   static const _navItems = [
     _NavItem(
@@ -48,6 +54,16 @@ class _ArtistMainScreenState extends State<ArtistMainScreen> {
       icon: Icons.receipt_long_rounded,
       label: 'Orders',
     ),
+    // 🆕 Reviews left by customers.
+    _NavItem(
+      icon: Icons.star_rounded,
+      label: 'Reviews',
+    ),
+    // 🆕 Complaints raised against/about the artist.
+    _NavItem(
+      icon: Icons.report_problem_rounded,
+      label: 'Complaints',
+    ),
     _NavItem(
       icon: Icons.person_rounded,
       label: 'Profile',
@@ -60,6 +76,8 @@ class _ArtistMainScreenState extends State<ArtistMainScreen> {
     CreateServiceScreen(),
     ArtistWalletScreen(),
     ArtistOrdersScreen(),
+    ArtistReviewScreen(),      // 🆕
+    ArtistComplaintScreen(),   // 🆕
     ArtistProfileScreen(),
   ];
 
@@ -150,13 +168,18 @@ class _ArtistMainScreenState extends State<ArtistMainScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  _navItems[_currentIndex].label,
-                  style: AppTextStyles.h5.copyWith(
-                    color: textPrimary,
+                // Expanded so long labels ("Complaints") never push the
+                // trailing action icons off-screen on narrow devices.
+                Expanded(
+                  child: Text(
+                    _navItems[_currentIndex].label,
+                    style: AppTextStyles.h5.copyWith(
+                      color: textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
                 Obx(() {
                   final unread = chatController.totalUnread.value;
                   return _TopBarIcon(
@@ -271,6 +294,9 @@ class _ArtistMainScreenState extends State<ArtistMainScreen> {
               ),
             ),
             const SizedBox(height: 8),
+            // Scrollable so adding more nav items (like Reviews and
+            // Complaints) never overflows the drawer vertically on
+            // shorter phone screens — it just scrolls instead.
             Expanded(
               child: ListView.builder(
                 padding:
@@ -352,6 +378,8 @@ class _DrawerTile extends StatelessWidget {
         ),
         title: Text(
           item.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: isSelected ? Colors.white : unselectedColor,
             fontSize: 14,

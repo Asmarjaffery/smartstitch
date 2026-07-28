@@ -9,12 +9,6 @@ import 'package:smartstitch/services/notification_service.dart';
 
 class NotificationCenterController extends GetxController {
   static NotificationCenterController get to => Get.find();
-
-  // ⚠️ Pehle RiderNotificationService use ho raha tha, jo 'rider_notifications'
-  // collection padhta hai. Lekin order/delivery notifications (accept, start,
-  // delivered waghera) NotificationService.sendNotification() se 'notifications'
-  // collection mein likhi jaati hain — isliye wahi source yahan bhi use karna hai,
-  // warna list hamesha khali rahegi.
   final _service = NotificationService.instance;
 
   // ---------------------------------------------------------------------------

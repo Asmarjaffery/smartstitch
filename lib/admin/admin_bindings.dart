@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:smartstitch/admin/order/admin_order_controller.dart';
 import 'package:smartstitch/admin/analytics/analytics_controller.dart';
+import 'package:smartstitch/admin/compensation/admin_compensation_controller.dart';
 import 'dashboard/admin_dashboard_controller.dart';
 import 'users/admin_user_controller.dart';
 import 'users/admin_artist_controller.dart';
@@ -43,5 +44,9 @@ class AdminBindings extends Bindings {
     Get.lazyPut<AdminOrderController>(() => AdminOrderController(), fenix: true);
 
     Get.lazyPut<AnalyticsController>(() => AnalyticsController(), fenix: true);
+
+    Get.lazyPut<AdminCompensationController>(
+        () => AdminCompensationController(),
+        fenix: true);
   }
 }

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:smartstitch/models/order_model.dart';
 import 'package:smartstitch/models/enums.dart';
+import 'package:smartstitch/services/notification_service.dart';
 
 class ArtistOrderController extends GetxController {
   static ArtistOrderController get to => Get.find();
@@ -12,6 +13,24 @@ class ArtistOrderController extends GetxController {
   final _auth = FirebaseAuth.instance;
 
   String get artistId => _auth.currentUser?.uid ?? '';
+
+  // ─── Safe date parsing ────────────────────────────────────────────────
+  // Some older `bookings` docs store createdAt/updatedAt/appointmentDate as
+  // a Firestore Timestamp, while newer ones store an ISO8601 String.
+  // OrderModel.fromJson always expects a String, so normalize here.
+  String _toIsoString(dynamic value, String fallback) {
+    if (value == null) return fallback;
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    if (value is String) return value;
+    return fallback;
+  }
+
+  String? _toIsoStringOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    if (value is String) return value;
+    return null;
+  }
 
   final isLoading = true.obs;
   final orders = <OrderModel>[].obs;
@@ -28,6 +47,14 @@ class ArtistOrderController extends GetxController {
         return orders;
       case 'new':
         return orders.where((o) => o.status == OrderStatus.pending).toList();
+      // ✅ Custom Design Quote Flow — bookings sitting with the artist for
+      // pricing, or already priced and waiting on the customer's decision.
+      case 'quote':
+        return orders
+            .where((o) =>
+                o.quoteStatus == QuoteStatus.pendingQuote ||
+                o.quoteStatus == QuoteStatus.quoted)
+            .toList();
       case 'active':
         return orders
             .where((o) =>
@@ -48,6 +75,12 @@ class ArtistOrderController extends GetxController {
     }
   }
 
+  /// How many bookings are currently sitting with the artist waiting for a
+  /// price — used to badge the "Quote" filter tab.
+  int get pendingQuoteCount => orders
+      .where((o) => o.quoteStatus == QuoteStatus.pendingQuote)
+      .length;
+
   @override
   void onInit() {
     super.onInit();
@@ -67,10 +100,18 @@ class ArtistOrderController extends GetxController {
         .where('artistId', isEqualTo: artistId)
         .snapshots()
         .listen((snap) {
-      final list = snap.docs
-          .map((doc) => OrderModel.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      final list = <OrderModel>[];
+      for (final doc in snap.docs) {
+        try {
+          list.add(OrderModel.fromJson({...doc.data(), 'id': doc.id}));
+        } catch (e) {
+          debugPrint('❌ Failed to parse order ${doc.id}: $e');
+        }
+      }
       _mergeOrders(list, 'orders');
+    }, onError: (e, st) {
+      debugPrint('❌ ArtistOrderController orders stream error: $e');
+      isLoading.value = false;
     });
 
     // Bookings collection
@@ -80,75 +121,89 @@ class ArtistOrderController extends GetxController {
         .snapshots()
         .listen((snap) {
       final now = DateTime.now().toIso8601String();
-      final list = snap.docs.map((doc) {
+      final list = <OrderModel>[];
+      for (final doc in snap.docs) {
         final d = doc.data();
-        return OrderModel.fromJson({
-          'id': doc.id,
-          'customerId': d['customerId'] ?? '',
-          'artistId': d['artistId'] ?? '',
-          'riderId': null,
-          'status': d['status'] ?? 'pending',
-          'placedAt': d['createdAt'] ?? now,
-          'updatedAt': d['updatedAt'] ?? now,
-          'specialInstructions': d['specialInstructions'],
-          'isHomeVisit': d['isHomeVisit'] ?? false,
-          'appointmentDate': d['appointmentDate'],
-          'service': {
-            'id': d['serviceId'] ?? '',
-            'name': d['serviceTitle'] ?? 'Service',
-            'description': '',
-            'price': (d['servicePrice'] ?? 0).toDouble(),
-            'imageUrl': '',
-            'isActive': true,
-            'createdAt': now,
-          },
-          // ✅ Use the actual values saved in Firestore at booking-creation
-          // time instead of recalculating here with different (wrong)
-          // percentages — this keeps what the artist sees consistent with
-          // what was actually stored (15% commission / 85% artist share).
-          'servicePrice': (d['servicePrice'] ?? 0).toDouble(),
-          'deliveryFee': (d['deliveryFee'] ?? 0).toDouble(),
-          'totalAmount': (d['totalAmount'] ?? 0).toDouble(),
-          'platformCommission': (d['platformCommission'] ??
-                  ((d['servicePrice'] ?? 0) * 0.15))
-              .toDouble(),
-          'artistAmount': (d['artistAmount'] ??
-                  ((d['servicePrice'] ?? 0) * 0.85))
-              .toDouble(),
-          'measurements': {
-            'id': d['measurementId'] ?? '',
-            'userId': d['customerId'] ?? '',
-            'height': 0.0,
-            'chest': 0.0,
-            'waist': 0.0,
-            'shoulder': 0.0,
-            'hips': 0.0,
-            'sleevLength': 0.0,
-            'inseam': 0.0,
-            'neck': 0.0,
-            'aiAccuracyScore': 0.0,
-            'isAiGenerated': false,
-            'measuredAt': now,
-          },
-          'deliveryAddress': {
-            'id': d['address']?['id'] ?? '',
-            'label': d['bookingType'] == 'homeVisit'
-                ? (d['address']?['label'] ?? 'Home')
-                : 'Drop Off',
-            'fullAddress': d['address']?['fullAddress'] ?? 'Drop Off at Studio',
-            'city': d['address']?['city'] ?? 'N/A',
-            'province': d['address']?['province'] ?? 'N/A',
-            'latitude': (d['address']?['latitude'] ?? 0).toDouble(),
-            'longitude': (d['address']?['longitude'] ?? 0).toDouble(),
-            'isDefault': false,
-          },
-          'designImages':
-              d['designImageUrl'] != null ? [d['designImageUrl']] : [],
-          'payment': null,
-          'measurementId': d['measurementId'],
-        });
-      }).toList();
+        try {
+          list.add(OrderModel.fromJson({
+            'id': doc.id,
+            'customerId': d['customerId'] ?? '',
+            'artistId': d['artistId'] ?? '',
+            'riderId': null,
+            'status': d['status'] ?? 'pending',
+            'placedAt': _toIsoString(d['createdAt'], now),
+            'updatedAt': _toIsoString(d['updatedAt'], now),
+            'specialInstructions': d['specialInstructions'],
+            'isHomeVisit': d['isHomeVisit'] ?? false,
+            'appointmentDate': _toIsoStringOrNull(d['appointmentDate']),
+            'service': {
+              'id': d['serviceId'] ?? '',
+              'title': d['serviceTitle'] ?? 'Service',
+              'description': '',
+              'price': (d['servicePrice'] ?? 0).toDouble(),
+              'imageUrl': '',
+              'isActive': true,
+              'createdAt': now,
+            },
+            // ✅ Use the actual values saved in Firestore at booking-creation
+            // time instead of recalculating here with different (wrong)
+            // percentages — this keeps what the artist sees consistent with
+            // what was actually stored (15% commission / 85% artist share).
+            'servicePrice': (d['servicePrice'] ?? 0).toDouble(),
+            'deliveryFee': (d['deliveryFee'] ?? 0).toDouble(),
+            'totalAmount': (d['totalAmount'] ?? 0).toDouble(),
+            'platformCommission': (d['platformCommission'] ??
+                    ((d['servicePrice'] ?? 0) * 0.15))
+                .toDouble(),
+            'artistAmount': (d['artistAmount'] ??
+                    ((d['servicePrice'] ?? 0) * 0.85))
+                .toDouble(),
+            'measurements': {
+              'id': d['measurementId'] ?? '',
+              'userId': d['customerId'] ?? '',
+              'height': 0.0,
+              'chest': 0.0,
+              'waist': 0.0,
+              'shoulder': 0.0,
+              'hips': 0.0,
+              'sleevLength': 0.0,
+              'inseam': 0.0,
+              'neck': 0.0,
+              'aiAccuracyScore': 0.0,
+              'isAiGenerated': false,
+              'measuredAt': now,
+            },
+            'deliveryAddress': {
+              'id': d['address']?['id'] ?? '',
+              'label': d['bookingType'] == 'homeVisit'
+                  ? (d['address']?['label'] ?? 'Home')
+                  : 'Drop Off',
+              'fullAddress': d['address']?['fullAddress'] ?? 'Drop Off at Studio',
+              'city': d['address']?['city'] ?? 'N/A',
+              'province': d['address']?['province'] ?? 'N/A',
+              'latitude': (d['address']?['latitude'] ?? 0).toDouble(),
+              'longitude': (d['address']?['longitude'] ?? 0).toDouble(),
+              'isDefault': false,
+            },
+            'designImages': d['designImageUrls'] != null &&
+                    (d['designImageUrls'] as List).isNotEmpty
+                ? d['designImageUrls']
+                : (d['designImageUrl'] != null ? [d['designImageUrl']] : []),
+            'payment': null,
+            'measurementId': d['measurementId'],
+            // ✅ Custom Design Quote Flow
+            'quoteStatus': d['quoteStatus'],
+            'quotedPrice': d['quotedPrice'],
+            'quotedAt': _toIsoStringOrNull(d['quotedAt']),
+          }));
+        } catch (e, st) {
+          debugPrint('❌ Failed to parse booking ${doc.id}: $e');
+        }
+      }
       _mergeOrders(list, 'bookings');
+    }, onError: (e, st) {
+      debugPrint('❌ ArtistOrderController bookings stream error: $e');
+      isLoading.value = false;
     });
   }
 
@@ -246,6 +301,47 @@ class ArtistOrderController extends GetxController {
       _showSuccess('Marked as stitching completed.');
     } catch (e) {
       _showError('Failed to update order: $e');
+    }
+  }
+
+  // ─── Custom Design Quote Flow ──────────────────────────────────────────
+  // Called from the artist's "Send Quote" dialog on a `pendingQuote`
+  // booking. Only the `bookings` collection ever has a quote flow — plain
+  // `orders` docs are already fixed-price.
+
+  /// Sends [price] as this booking's quote and notifies the customer.
+  Future<void> submitQuote(String orderId, double price) async {
+    if (price <= 0) {
+      _showError('Enter a valid price.');
+      return;
+    }
+    try {
+      await _db.collection('bookings').doc(orderId).update({
+        'quotedPrice': price,
+        'quoteStatus': QuoteStatus.quoted.name,
+        'quotedAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+
+      final doc = await _db.collection('bookings').doc(orderId).get();
+      final customerId = doc.data()?['customerId'] as String?;
+      final serviceTitle = doc.data()?['serviceTitle'] as String? ?? 'your booking';
+
+      if (customerId != null && customerId.isNotEmpty) {
+        await NotificationService.instance.sendNotification(
+          recipientId: customerId,
+          recipientRole: UserRole.customer,
+          type: NotificationType.orderUpdate,
+          title: 'Price Quote Sent!',
+          body:
+              'The artist sent a price of Rs ${price.toInt()} for $serviceTitle. Review it in My Orders.',
+          data: {'bookingId': orderId},
+        );
+      }
+
+      _showSuccess('Quote sent to customer.');
+    } catch (e) {
+      _showError('Failed to send quote: $e');
     }
   }
 

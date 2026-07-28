@@ -3,8 +3,6 @@ import 'package:smartstitch/core/theme/app.theme.dart';
 import '../../models/wallet_models.dart';
 
 
-// ─── COLOR TOKENS (now mapped to the app's single source of truth: AppColors) ─
-
 class WalletColors {
   WalletColors._();
 
@@ -13,8 +11,6 @@ class WalletColors {
   static const teal400 = AppColors.primaryLight;
   static const teal100 = AppColors.primarySoft;
 
-  // Aliases used by the withdraw screen — kept alongside the teal* tokens
-  // above so both naming schemes work without breaking existing callers.
   static const primary = AppColors.primary;
   static const primaryDark = AppColors.primaryDark;
   static const primaryLight = AppColors.primaryLight;
@@ -137,21 +133,30 @@ class SectionHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: theme.colorScheme.onSurface,
+        // Expanded + ellipsis: a long title (or a narrow screen) used to
+        // have nothing stopping it from pushing straight through the
+        // "action" label on the right. Now the title always yields first.
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
         ),
-        const Spacer(),
-        if (action != null)
+        if (action != null) ...[
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: onAction,
             child: Text(
               action!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 13,
@@ -160,6 +165,7 @@ class SectionHeader extends StatelessWidget {
               ),
             ),
           ),
+        ],
       ],
     );
   }
@@ -204,7 +210,13 @@ class WalletStatCard extends StatelessWidget {
           ),
         ],
       ),
+      // mainAxisSize.min + Flexible/FittedBox below means this card fits
+      // whatever height it's given by the caller instead of assuming a
+      // fixed height is always available. Combined with the caller now
+      // giving cards a generous mainAxisExtent, this removes the
+      // "BOTTOM OVERFLOWED" error seen with large Rs. amounts.
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
@@ -217,19 +229,29 @@ class WalletStatCard extends StatelessWidget {
             child: Icon(icon, color: iconColor, size: 19),
           ),
           const SizedBox(height: 12),
-          Text(
-            _fmt(amount),
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurface,
-              letterSpacing: -0.5,
+          // FittedBox: a large lifetime-earnings number (e.g. Rs. 1,234,567)
+          // used to have no guard at all and could wrap to a 2nd line,
+          // blowing past the card's height. Now it shrinks to fit instead.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _fmt(amount),
+              maxLines: 1,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 11,
@@ -341,13 +363,17 @@ class StatusBadge extends StatelessWidget {
         children: [
           Icon(icon, color: color, size: 11),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: color,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
           ),
         ],
@@ -417,7 +443,9 @@ class PremiumButton extends StatelessWidget {
       child: Opacity(
         opacity: disabled ? 0.5 : 1,
         child: Container(
+          width: double.infinity,
           height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -451,13 +479,21 @@ class PremiumButton extends StatelessWidget {
                     children: [
                       Icon(icon, color: Colors.white, size: 20),
                       const SizedBox(width: 10),
-                      Text(
-                        label,
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                      // Flexible + ellipsis: a long label on a narrow
+                      // screen (width: double.infinity above, but the
+                      // Row itself was unguarded) could push past the
+                      // button's rounded edges. Now it clips gracefully.
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
@@ -547,6 +583,9 @@ class WalletEmptyState extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             title,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 16,
@@ -610,7 +649,21 @@ class _WalletSkeletonLoaderState extends State<WalletSkeletonLoader>
       animation: _anim,
       builder: (_, __) {
         final color = Color.lerp(base, highlight, _anim.value)!;
-        return Padding(
+
+        // ⭐ THE ACTUAL FIX for "RenderFlex overflowed by 59 pixels":
+        // This skeleton's content needs ~670px of vertical space (title +
+        // balance box + 2 rows of stat boxes + 3 transaction rows + all the
+        // spacing between them). It was placed directly as the Scaffold
+        // body with NO scrolling, so on any screen shorter than ~670px
+        // (basically every phone in portrait) it had nowhere to put the
+        // extra content and Flutter threw a RenderFlex overflow.
+        //
+        // A skeleton loader is only shown for a second or two, so the fix
+        // isn't to shrink it artificially — it's to let it scroll like the
+        // real content underneath it will. SingleChildScrollView here means
+        // it NEVER overflows again, regardless of screen height.
+        return SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -700,13 +753,17 @@ class InfoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: color,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
           ),
         ],
@@ -742,22 +799,35 @@ class WalletDetailRow extends StatelessWidget {
               size: 17,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
           const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 13,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+          // Flexible: previously an unguarded Text next to a Spacer() —
+          // a long label (e.g. a long payment-method name) could overflow
+          // straight past the value on the right on narrow screens.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
             ),
           ),
           const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: valueColor ?? theme.colorScheme.onSurface,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? theme.colorScheme.onSurface,
+              ),
             ),
           ),
         ],

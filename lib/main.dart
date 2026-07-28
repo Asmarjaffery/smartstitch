@@ -13,6 +13,7 @@ import 'package:smartstitch/routes/app_pages.dart';
 
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/controllers/chat_controller.dart';
+import 'package:smartstitch/services/notification_service.dart';
 import 'package:smartstitch/user/booking/booking_controller.dart';
 
 import 'package:smartstitch/firebase_options.dart';
@@ -24,14 +25,13 @@ Future<void> main() async {
 
   await dotenv.load(fileName: ".env");
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+ await Firebase.initializeApp(
+  options: DefaultFirebaseOptions.currentPlatform,
+);
+
+await NotificationService.instance.init();
 
   // ─── Stripe setup ────────────────────────────────────────────
-  // flutter_stripe internally checks Platform.isIOS/isAndroid via dart:io,
-  // which throws "Unsupported operation: Platform._operatingSystem" on web.
-  // So we only initialize native Stripe on mobile/desktop, not on web.
   if (!kIsWeb) {
     Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
     await Stripe.instance.applySettings();

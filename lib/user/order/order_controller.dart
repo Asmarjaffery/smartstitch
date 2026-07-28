@@ -4,12 +4,14 @@ import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/models/body_measurement_model.dart';
+import 'package:smartstitch/models/booking_model.dart';
 import 'package:smartstitch/models/order_model.dart';
 import 'package:smartstitch/models/refund_model.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
 import 'package:smartstitch/services/firebase_service.dart';
 import 'package:smartstitch/services/notification_service.dart';
+import 'package:smartstitch/user/booking/booking_controller.dart';
 
 class OrderController extends GetxController {
   static OrderController get to => Get.find();
@@ -36,6 +38,20 @@ class OrderController extends GetxController {
 
   final Rx<RefundRequestModel?> selectedRefundRequest =
       Rx<RefundRequestModel?>(null);
+
+  // ✅ NEW: raw `paymentMethod` string per order (e.g. 'cod', 'wallet',
+  // 'card', 'stripe'), keyed by order/booking id. Used to gate the
+  // "Request Refund" button so it only ever shows for card/Stripe
+  // payments — COD and wallet orders never had money taken upfront in a
+  // way that's refundable through this flow.
+  final RxMap<String, String> orderPaymentMethods = <String, String>{}.obs;
+
+  /// True only when the order was paid via card/Stripe. COD and wallet
+  /// (and anything else) are treated as non-refundable through this flow.
+  bool isCardPayment(String orderId) {
+    final method = (orderPaymentMethods[orderId] ?? '').toLowerCase();
+    return method == 'card' || method == 'stripe';
+  }
 
   List<OrderModel> get filteredOrders {
     switch (filterStatus.value) {
@@ -88,11 +104,11 @@ class OrderController extends GetxController {
     try {
       isLoading.value = true;
       final uid = AuthController.to.currentUserId;
-      
+
       // 🔍 DEBUG: Log the UID we're querying with
       debugPrint('📋 ===== LOADORDERS DEBUG =====');
       debugPrint('🔑 Current UID: $uid');
-      
+
       if (uid == null || uid.isEmpty) {
         debugPrint('❌ UID is null or empty! Cannot query bookings.');
         debugInfo.value = 'UID is null. Please login.';
@@ -121,6 +137,7 @@ class OrderController extends GetxController {
 
       final now = DateTime.now().toIso8601String();
       final bookingOrders = <OrderModel>[];
+      final paymentMethods = <String, String>{};
       int successCount = 0;
       int errorCount = 0;
 
@@ -130,6 +147,10 @@ class OrderController extends GetxController {
 
           debugPrint('📄 Processing booking: ${doc.id}');
           debugPrint('   Status: ${d['status']} | Service: ${d['serviceTitle']}');
+
+          // ✅ NEW: track raw payment method (cod / wallet / card / stripe)
+          // per order so the UI can gate refund eligibility on it.
+          paymentMethods[doc.id] = (d['paymentMethod'] ?? 'cod').toString();
 
           // ────────── Status Conversion ──────────
           OrderStatus orderStatus;
@@ -242,8 +263,22 @@ class OrderController extends GetxController {
               'isDefault': false,
             },
             'designImages':
-                d['designImageUrl'] != null ? [d['designImageUrl']] : [],
+                d['designImageUrls'] != null && (d['designImageUrls'] as List).isNotEmpty
+                    ? d['designImageUrls']
+                    : (d['designImageUrl'] != null ? [d['designImageUrl']] : []),
             'payment': null,
+            // ✅ Custom Design Quote Flow — so order list/detail screens
+            // know whether this booking is waiting on the artist, waiting
+            // on the customer's decision, or done.
+            'quoteStatus': d['quoteStatus'],
+            'quotedPrice': d['quotedPrice'],
+            'quotedAt': d['quotedAt'],
+            // ✅ Delivery Exception — rider-reported failed delivery.
+            // These stay populated even while `status` is still stuck at
+            // riderAssigned, so the customer UI can react to them directly.
+            'riderStatus': d['riderStatus'],
+            'deliveryExceptionReason': d['deliveryExceptionReason'],
+            'lastDeliveryExceptionId': d['lastDeliveryExceptionId'],
           });
 
           bookingOrders.add(order);
@@ -258,6 +293,7 @@ class OrderController extends GetxController {
 
       myOrders.value = bookingOrders;
       myOrders.sort((a, b) => b.placedAt.compareTo(a.placedAt));
+      orderPaymentMethods.value = paymentMethods;
 
       debugInfo.value =
           '✅ Loaded $successCount orders ($errorCount errors) | UID: $uid';
@@ -384,19 +420,93 @@ class OrderController extends GetxController {
   void listenToOrder(String orderId) {
     _orderLocationSub?.cancel();
     debugPrint('👂 Listening to order updates: $orderId');
+
+    // ✅ FIX: remember the status we already know about so we can detect
+    // a *change* (e.g. cancelled by the artist/rider) instead of only
+    // ever reading the rider's location.
+    OrderStatus? lastKnownStatus = selectedOrder.value?.status;
+
+    // ✅ `status` alone doesn't move when a delivery attempt fails —
+    // rider side only flips `riderStatus`. Track it separately so the
+    // customer gets notified even though `status` is still `riderAssigned`.
+    String? lastKnownRiderStatus = selectedOrder.value?.riderStatus;
+
     _orderLocationSub = _firebaseService.firestore
         .collection('bookings')
         .doc(orderId)
         .snapshots()
-        .listen((doc) {
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
-        riderLocation.value = data['riderLocation'] as Map<String, dynamic>?;
-        if (riderLocation.value != null) {
-          debugPrint(
-              '📍 Rider location updated: ${riderLocation.value}');
+        .listen((doc) async {
+      if (!doc.exists) return;
+      final data = doc.data() as Map<String, dynamic>;
+
+      // ────────── Live rider location ──────────
+      riderLocation.value = data['riderLocation'] as Map<String, dynamic>?;
+      if (riderLocation.value != null) {
+        debugPrint('📍 Rider location updated: ${riderLocation.value}');
+      }
+
+      // ✅ Keep payment method map fresh too, in case it's set/updated
+      // after the initial load (e.g. payment completed after booking).
+      final method = data['paymentMethod'];
+      if (method != null) {
+        orderPaymentMethods[orderId] = method.toString();
+      }
+
+      // ────────── Live status tracking ──────────
+      // ✅ FIX: this is what actually lets the customer *find out* the
+      // order was cancelled, in real time, without refreshing the screen.
+      OrderStatus newStatus;
+      try {
+        newStatus = OrderStatus.values.byName(data['status'] ?? 'pending');
+      } catch (e) {
+        newStatus = OrderStatus.pending;
+      }
+
+      if (lastKnownStatus != null && lastKnownStatus != newStatus) {
+        debugPrint('🔔 Order $orderId status changed: '
+            '$lastKnownStatus -> $newStatus');
+
+        if (newStatus == OrderStatus.cancelled) {
+          AppHelpers.showError('Your order has been cancelled.');
+          await _loadRefundRequest(orderId);
+        }
+
+        // Refresh the list + selected order so every screen (list,
+        // detail, tracker) reflects the new status immediately.
+        await loadOrders();
+        for (final o in myOrders) {
+          if (o.id == orderId) {
+            selectedOrder.value = o;
+            break;
+          }
         }
       }
+      lastKnownStatus = newStatus;
+
+      // ────────── Live delivery-exception tracking ──────────
+      // ✅ rider marks a failed delivery attempt by setting
+      // `riderStatus: 'deliveryFailed'` on the booking doc — `status`
+      // itself stays `riderAssigned` until admin resolves it. Without
+      // this, the customer never finds out the delivery failed.
+      final newRiderStatus = data['riderStatus'] as String?;
+      if (newRiderStatus != lastKnownRiderStatus) {
+        debugPrint('🔔 Order $orderId riderStatus changed: '
+            '$lastKnownRiderStatus -> $newRiderStatus');
+
+        if (newRiderStatus == 'deliveryFailed') {
+          AppHelpers.showError(
+              'Delivery failed. Check the order screen for details.');
+        }
+
+        await loadOrders();
+        for (final o in myOrders) {
+          if (o.id == orderId) {
+            selectedOrder.value = o;
+            break;
+          }
+        }
+      }
+      lastKnownRiderStatus = newRiderStatus;
     });
   }
 
@@ -440,7 +550,7 @@ class OrderController extends GetxController {
         recipientRole: UserRole.artist,
         type: NotificationType.orderUpdate,
         title: 'Order Cancelled',
-        body: 'Customer ne order cancel kar diya: $orderId',
+        body: 'Customer cancelled the order: $orderId',
         data: {'orderId': orderId},
       );
 
@@ -463,6 +573,16 @@ class OrderController extends GetxController {
     try {
       isLoading.value = true;
       debugPrint('💰 Requesting refund for: $orderId');
+
+      // ✅ Safety net: even if this ever gets called from somewhere that
+      // skipped the UI gate, refuse to create a refund request for a
+      // non-card payment (COD / wallet / anything else).
+      if (!isCardPayment(orderId)) {
+        debugPrint('⚠️ Refund blocked — order $orderId is not a card payment '
+            '(paymentMethod: ${orderPaymentMethods[orderId]})');
+        AppHelpers.showError('Refunds are only available for card payments.');
+        return;
+      }
 
       final bookingSnap = await _firebaseService.firestore
           .collection('bookings')
@@ -545,7 +665,7 @@ class OrderController extends GetxController {
           recipientRole: UserRole.artist,
           type: NotificationType.orderUpdate,
           title: 'Refund Requested',
-          body: 'Customer ne refund ki request ki hai: $orderId',
+          body: 'Customer requested a refund: $orderId',
           data: {'orderId': orderId, 'action': 'refundRequest'},
         );
       }
@@ -575,6 +695,78 @@ class OrderController extends GetxController {
   bool canCancel(OrderStatus status) =>
       status == OrderStatus.pending || status == OrderStatus.accepted;
 
+  // ✅ Reschedule flow — offered once an order has actually been
+  // cancelled, OR once a rider has reported a failed delivery (since
+  // `status` never leaves `riderAssigned` in that case, we check
+  // `riderStatus` too). Reschedule is available regardless of payment
+  // method — only the refund flow is card-only.
+  bool canReschedule(OrderModel order) =>
+      order.status == OrderStatus.cancelled || order.isDeliveryFailed;
+
+  /// Puts a cancelled order back in front of the artist with a new
+  /// appointment/delivery date, instead of the customer having to place
+  /// a brand new booking from scratch.
+  Future<void> rescheduleOrder(String orderId, DateTime newDate) async {
+    try {
+      isLoading.value = true;
+      debugPrint('📅 Rescheduling order: $orderId -> $newDate');
+
+      final bookingSnap = await _firebaseService.firestore
+          .collection('bookings')
+          .doc(orderId)
+          .get();
+
+      if (!bookingSnap.exists) {
+        AppHelpers.showError('Order not found.');
+        return;
+      }
+
+      final data = bookingSnap.data()!;
+      final artistId = (data['artistId'] ?? '').toString();
+
+      await _firebaseService.firestore.collection('bookings').doc(orderId).update({
+        'status': OrderStatus.pending.name,
+        'appointmentDate': newDate.toIso8601String(),
+        'rescheduledAt': DateTime.now().toIso8601String(),
+        // Clear any previous rider assignment — a rescheduled order starts
+        // the pending → accepted → ... flow again.
+        'riderId': null,
+        'riderLocation': null,
+        // ✅ clear the delivery-exception flags too, so a rescheduled
+        // order doesn't still show as "delivery failed" once it's back in
+        // the normal flow.
+        'riderStatus': null,
+        'deliveryExceptionReason': null,
+      });
+
+      if (artistId.isNotEmpty) {
+        await NotificationService.instance.sendNotification(
+          recipientId: artistId,
+          recipientRole: UserRole.artist,
+          type: NotificationType.orderUpdate,
+          title: 'Order Rescheduled',
+          body: 'Customer rescheduled the order: $orderId',
+          data: {'orderId': orderId, 'action': 'reschedule'},
+        );
+      }
+
+      AppHelpers.showSuccess('Order has been rescheduled.');
+      await loadOrders();
+      for (final o in myOrders) {
+        if (o.id == orderId) {
+          selectedOrder.value = o;
+          break;
+        }
+      }
+      debugPrint('✅ Order rescheduled successfully');
+    } catch (e) {
+      debugPrint('❌ Reschedule error: $e');
+      AppHelpers.showError('Failed to reschedule: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   int statusStep(OrderStatus status) {
     switch (status) {
       case OrderStatus.pending:
@@ -591,6 +783,52 @@ class OrderController extends GetxController {
         return 5;
       case OrderStatus.cancelled:
         return -1;
+    }
+  }
+
+  // ─── Custom Design Quote Flow ──────────────────────────────────────────
+  // OrderModel is a read-only projection of the raw `bookings` doc, so the
+  // actual quote-accept payment flow (Stripe/cash, Firestore writes,
+  // artist notification) stays owned by BookingController — this just
+  // fetches the full booking doc and hands it off, then refreshes the
+  // local list once the follow-up screen is done.
+
+  /// Fetches the full booking behind [order] and takes the customer to the
+  /// Confirm Payment screen to accept the artist's quote.
+  Future<void> acceptQuote(OrderModel order) async {
+    try {
+      final doc = await _firebaseService.firestore
+          .collection('bookings')
+          .doc(order.id)
+          .get();
+      if (!doc.exists) {
+        AppHelpers.showError('Booking not found.');
+        return;
+      }
+      final booking = BookingModel.fromJson({...doc.data()!, 'id': doc.id});
+      BookingController.to.acceptQuote(booking);
+    } catch (e) {
+      AppHelpers.showError('Failed to load quote.');
+    }
+  }
+
+  /// Declines the artist's quote for [order] — cancels the booking since
+  /// no payment was ever taken for it — then refreshes the order list.
+  Future<void> declineQuote(OrderModel order) async {
+    try {
+      final doc = await _firebaseService.firestore
+          .collection('bookings')
+          .doc(order.id)
+          .get();
+      if (!doc.exists) {
+        AppHelpers.showError('Booking not found.');
+        return;
+      }
+      final booking = BookingModel.fromJson({...doc.data()!, 'id': doc.id});
+      await BookingController.to.declineQuote(booking);
+      await loadOrders();
+    } catch (e) {
+      AppHelpers.showError('Failed to decline quote.');
     }
   }
 }

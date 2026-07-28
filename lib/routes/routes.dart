@@ -19,6 +19,7 @@ class AppRoutes {
   static const String artistDetail = '/customer/artist-detail';
   static const String bookingCreate = '/customer/booking/create';
   static const String bookingConfirm = '/customer/booking/confirm';
+  static const String bookingSuccess = '/customer/booking/success';
   static const String checkout = '/customer/checkout';
   static const String paymentSuccess = '/customer/payment-success';
   static const String reviewCreate = '/customer/review';
@@ -33,6 +34,11 @@ class AppRoutes {
   static const String complaintDetail = '/customer/complaints/detail';
   static const String myReviews = '/customer/my-reviews';
   static const String designExplore = '/customer/design-explore';
+
+  // ─── Customer: Delivery Exceptions ────────────────────────────────────────
+  static const String customerDeliveryFailed = '/customer/delivery-failed';
+  static const String customerRescheduleDelivery = '/customer/reschedule-delivery';
+  static const String customerOutstandingCharge = '/customer/outstanding-charge';
 
   // ─── Chat ────────────────────────────────────────────────────────────────
   static const String chatList = '/chat/list';
@@ -57,6 +63,13 @@ class AppRoutes {
   static const String riderDeliveryDetail = '/rider/delivery-detail';
   static const String riderEarnings = '/rider/earnings';
 
+  // ─── Rider: Compensation & Delivery Exceptions ────────────────────────────
+  static const String riderReportDeliveryIssue = '/rider/report-delivery-issue';
+  static const String riderDeliveryAttemptSummary = '/rider/delivery-attempt-summary';
+  static const String riderIssueSubmitted = '/rider/issue-submitted';
+  static const String riderWallet = '/rider/wallet';
+  static const String riderCompensationHistory = '/rider/compensation-history';
+
   // ─── AI Assistant ────────────────────────────────────────────────────────
   static const String aiChat = '/ai/chat';
   static const String aiConversations = '/ai/conversations';
@@ -74,4 +87,8 @@ class AppRoutes {
   static const String adminReviews = '/admin/reviews';
   static const String performanceScreen = '/admin/performance';
   static const String adminRefunds = '/admin/refunds';
+
+  // ─── Admin: Failed Deliveries & Compensation ──────────────────────────────
+  static const String adminFailedDeliveries = '/admin/failed-deliveries';
+  static const String adminRiderCompensation = '/admin/rider-compensation';
 }

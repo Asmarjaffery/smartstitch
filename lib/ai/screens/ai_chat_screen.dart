@@ -95,6 +95,7 @@ class AiChatScreen extends StatelessWidget {
         icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
         onPressed: () => Get.back(),
       ),
+      titleSpacing: 0,
       title: Row(
         children: [
           Container(
@@ -108,21 +109,32 @@ class AiChatScreen extends StatelessWidget {
                 color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
-          Obx(() => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('AI Assistant',
+          // ✅ Expanded added — title/subtitle Column ab hamesha available
+          // width ke andar rehta hai, kabhi overflow nahi hoga chahy
+          // conversation title kitna bhi lamba ho ya screen kitni bhi choti.
+          Expanded(
+            child: Obx(() => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'AI Assistant',
                       style: TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
-                  Text(
-                    c.activeConversation.value?.title ?? 'New conversation',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey[500]),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              )),
+                          fontSize: 15, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      c.activeConversation.value?.title ??
+                          'New conversation',
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                )),
+          ),
         ],
       ),
       actions: [

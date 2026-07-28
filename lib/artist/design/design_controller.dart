@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:smartstitch/artist/design/service_publish_success_screen.dart';
+import 'package:smartstitch/artist/artist_main_screen.dart';
 
 /// ─── Dynamic Field Type ──────────────────────────────────────
 enum ServiceFieldType { chipSingle, chipMulti }
@@ -31,7 +31,8 @@ class ServiceController extends GetxController {
   String get artistId => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   // ─── Step Management ────────────────────────────────────────
-  final currentStep = 0.obs; // 0=Images,1=Basic,2=Details,3=Pricing,4=Publish
+  // 🆕 REORDERED to match the screen: 0=Basic,1=Details,2=Pricing,3=Images,4=Publish
+  final currentStep = 0.obs;
   static const int totalSteps = 5;
 
   // ─── Category (Locked, fetched from artist profile) ─────────
@@ -46,7 +47,7 @@ class ServiceController extends GetxController {
   final Rx<Map<String, dynamic>?> selectedService =
       Rx<Map<String, dynamic>?>(null);
 
-  // ─── Step 1: Images ──────────────────────────────────────────
+  // ─── Images ──────────────────────────────────────────────────
   final Rx<XFile?> coverImage = Rx<XFile?>(null);
   final RxList<XFile> galleryImages = <XFile>[].obs;
   // Existing (already-uploaded) images when editing a service — shown
@@ -55,15 +56,15 @@ class ServiceController extends GetxController {
   final RxList<String> existingGalleryImageUrls = <String>[].obs;
   final _picker = ImagePicker();
 
-  // ─── Step 2: Basic Info ──────────────────────────────────────
+  // ─── Basic Info ──────────────────────────────────────────────
   final serviceNameController = TextEditingController();
   final shortDescController = TextEditingController();
   final longDescController = TextEditingController();
 
-  // ─── Step 3: Dynamic Category Fields ─────────────────────────
+  // ─── Dynamic Category Fields ─────────────────────────────────
   final RxMap<String, dynamic> categoryFields = <String, dynamic>{}.obs;
 
-  // ─── Step 4: Pricing ─────────────────────────────────────────
+  // ─── Pricing ─────────────────────────────────────────────────
   final startingPriceController = TextEditingController();
   final deliveryDaysController = TextEditingController();
   final revisionCountController = TextEditingController(text: '2');
@@ -151,8 +152,9 @@ class ServiceController extends GetxController {
     ],
   };
 
-  /// Fields shown in Step 3, based on the artist's locked category.
-  /// Falls back to generic tags if the category has no specific config.
+  /// Fields shown in the Details step, based on the artist's locked
+  /// category. Falls back to generic tags if the category has no
+  /// specific config.
   List<ServiceFieldConfig> get currentCategoryFields =>
       categoryFieldConfigs[artistCategory.value] ??
       const [
@@ -268,7 +270,7 @@ class ServiceController extends GetxController {
         ),
       );
 
-      // Existing images — shown in Step 1 until replaced/removed.
+      // Existing images — shown in the Images step until replaced/removed.
       existingCoverImageUrl.value = data['coverImageUrl'] ?? '';
       existingGalleryImageUrls.assignAll(
         List<String>.from(data['galleryImageUrls'] ?? []),
@@ -296,9 +298,33 @@ class ServiceController extends GetxController {
     if (step <= currentStep.value) currentStep.value = step;
   }
 
+  // 🆕 REMAPPED to the new step order: 0=Basic,1=Details,2=Pricing,3=Images,4=Publish
   bool validateStep(int step) {
     switch (step) {
-      case 0:
+      case 0: // Basic Info
+        // Template selection only applies when creating a brand-new
+        // service — an existing service being edited already has its
+        // own name/description/price filled in.
+        if (!isEditing.value && selectedService.value == null) {
+          _warn('Please select a service from the list');
+          return false;
+        }
+        return true;
+      case 1: // Details
+        return true;
+      case 2: // Pricing
+        final price = double.tryParse(startingPriceController.text.trim());
+        if (price == null || price <= 0) {
+          _warn('Enter a valid starting price');
+          return false;
+        }
+        final days = int.tryParse(deliveryDaysController.text.trim());
+        if (days == null || days <= 0) {
+          _warn('Enter valid delivery days');
+          return false;
+        }
+        return true;
+      case 3: // Images
         final hasCover = coverImage.value != null ||
             (isEditing.value && existingCoverImageUrl.value.isNotEmpty);
         if (!hasCover) {
@@ -312,30 +338,7 @@ class ServiceController extends GetxController {
           return false;
         }
         return true;
-      case 1:
-        // Template selection only applies when creating a brand-new
-        // service — an existing service being edited already has its
-        // own name/description/price filled in.
-        if (!isEditing.value && selectedService.value == null) {
-          _warn('Please select a service from the list');
-          return false;
-        }
-        return true;
-      case 2:
-        return true;
-      case 3:
-        final price = double.tryParse(startingPriceController.text.trim());
-        if (price == null || price <= 0) {
-          _warn('Enter a valid starting price');
-          return false;
-        }
-        final days = int.tryParse(deliveryDaysController.text.trim());
-        if (days == null || days <= 0) {
-          _warn('Enter valid delivery days');
-          return false;
-        }
-        return true;
-      default:
+      default: // Publish
         return true;
     }
   }
@@ -452,14 +455,17 @@ class ServiceController extends GetxController {
         'createdAt': DateTime.now().toIso8601String(),
         'type': 'artist',
       });
-      
-      // ─── Navigate to Success Screen ───────────────────────────
-      await Future.delayed(const Duration(milliseconds: 300));
-      Get.to(
-        () => ServicePublishSuccessScreen(tag: controllerTag),
-        transition: Transition.rightToLeft,
+
+      // 🆕 Skip the success screen — go straight to the Portfolio tab
+      // (index 1) so the artist immediately sees their new service.
+      Get.snackbar(
+        'Published',
+        'Your service is now live',
+        backgroundColor: const Color(0xFF22C55E),
+        colorText: Colors.white,
       );
-      
+      Get.offAll(() => const ArtistMainScreen(initialIndex: 1));
+
     } catch (e) {
       _warn('Failed to publish: $e');
     } finally {

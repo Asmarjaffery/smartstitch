@@ -5,13 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
+import 'package:smartstitch/auth/signup_screen.dart'; 
 
-/// Pass the email + role right after signup succeeds, e.g.:
-///
-/// Get.to(() => OtpVerificationScreen(
-///   email: _emailController.text.trim(),
-///   role: 'Artist', // 'Customer' | 'Artist' | 'Rider'
-/// ));
 class OtpVerificationScreen extends StatefulWidget {
   final String email;
   final String role;
@@ -202,7 +197,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
                     Align(
                       alignment: Alignment.centerLeft,
                       child: IconButton(
-                        onPressed: () => Get.back(),
+                        onPressed: () {
+
+                          Get.off(() => const SignupScreen());
+                        },
                         icon: Icon(Icons.arrow_back_ios_new_rounded, color: textPrimary, size: 20),
                       ),
                     ),
@@ -262,42 +260,50 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
                       padding: const EdgeInsets.all(24),
                       child: Column(
                         children: [
+                          // ✅ Responsive OTP boxes: har box "Expanded" mein hai,
+                          // isliye ye kabhi bhi fixed width (46px) nahi lete —
+                          // available card width ko barabar hisson mein baant
+                          // lete hain. Choti screen (BlackBerry Z30, 360px) se
+                          // bari tablet tak, kabhi overflow nahi hoga.
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: List.generate(_otpLength, (index) {
-                              return SizedBox(
-                                width: 46,
-                                height: 56,
-                                child: TextField(
-                                  controller: _controllers[index],
-                                  focusNode: _focusNodes[index],
-                                  textAlign: TextAlign.center,
-                                  keyboardType: TextInputType.number,
-                                  maxLength: 1,
-                                  style: AppTextStyles.h5.copyWith(color: textPrimary),
-                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                  decoration: InputDecoration(
-                                    counterText: '',
-                                    filled: true,
-                                    fillColor: fillColor,
-                                    contentPadding: EdgeInsets.zero,
-                                    border: OutlineInputBorder(
-                                      borderRadius: AppRadius.medium,
-                                      borderSide: BorderSide(
-                                        color: _errorText != null ? AppColors.error : borderColor,
-                                        width: 1.2,
+                              return Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: SizedBox(
+                                    height: 56,
+                                    child: TextField(
+                                      controller: _controllers[index],
+                                      focusNode: _focusNodes[index],
+                                      textAlign: TextAlign.center,
+                                      keyboardType: TextInputType.number,
+                                      maxLength: 1,
+                                      style: AppTextStyles.h5.copyWith(color: textPrimary),
+                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      decoration: InputDecoration(
+                                        counterText: '',
+                                        filled: true,
+                                        fillColor: fillColor,
+                                        contentPadding: EdgeInsets.zero,
+                                        border: OutlineInputBorder(
+                                          borderRadius: AppRadius.medium,
+                                          borderSide: BorderSide(
+                                            color: _errorText != null ? AppColors.error : borderColor,
+                                            width: 1.2,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: AppRadius.medium,
+                                          borderSide: BorderSide(color: borderColor, width: 1.2),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: AppRadius.medium,
+                                          borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
+                                        ),
                                       ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: AppRadius.medium,
-                                      borderSide: BorderSide(color: borderColor, width: 1.2),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: AppRadius.medium,
-                                      borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
+                                      onChanged: (v) => _onDigitChanged(index, v),
                                     ),
                                   ),
-                                  onChanged: (v) => _onDigitChanged(index, v),
                                 ),
                               );
                             }),

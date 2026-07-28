@@ -72,33 +72,45 @@ class _RatingSummaryCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                controller.averageRating.value.toStringAsFixed(1),
-                style: AppTextStyles.h2.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: List.generate(5, (i) {
-                  final filled = i < controller.averageRating.value.round();
-                  return Icon(
-                    filled ? Icons.star_rounded : Icons.star_border_rounded,
+          // Fixed left column (average rating + stars + count). Wrapped
+          // with a max-width constraint so, combined with the Expanded
+          // breakdown on the right, it can never squeeze that side to
+          // negative width on very narrow screens (e.g. <320px).
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 90),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  controller.averageRating.value.toStringAsFixed(1),
+                  style: AppTextStyles.h2.copyWith(
                     color: Colors.white,
-                    size: 16,
-                  );
-                }),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${controller.totalReviews.value} review${controller.totalReviews.value == 1 ? '' : 's'}',
-                style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
-              ),
-            ],
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(5, (i) {
+                    final filled = i < controller.averageRating.value.round();
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    );
+                  }),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${controller.totalReviews.value} review${controller.totalReviews.value == 1 ? '' : 's'}',
+                  style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -136,11 +148,13 @@ class _RatingSummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       SizedBox(
-                        width: 18,
+                        width: 22,
                         child: Text(
                           '$count',
                           style: AppTextStyles.bodySmall
                               .copyWith(color: Colors.white70),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -175,6 +189,7 @@ class _ReviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
                 radius: 18,
@@ -198,6 +213,7 @@ class _ReviewCard extends StatelessWidget {
                           child: Text(
                             review.customerName,
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                             style: AppTextStyles.labelLarge,
                           ),
                         ),
@@ -212,11 +228,18 @@ class _ReviewCard extends StatelessWidget {
                       _relativeTime(review.createdAt),
                       style: AppTextStyles.bodySmall
                           .copyWith(color: AppColors.lightTextSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
+              // A fixed-width slot for the 5-star row keeps it from
+              // ever fighting the name column for space — the name
+              // column (Expanded above) always shrinks first.
+              const SizedBox(width: 6),
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: List.generate(5, (i) {
                   return Icon(
                     i < review.rating

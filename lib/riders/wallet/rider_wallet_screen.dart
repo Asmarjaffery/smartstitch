@@ -13,7 +13,6 @@ class RiderWalletScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = Get.find<WalletController>();
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -87,8 +86,8 @@ class RiderWalletScreen extends StatelessWidget {
           ),
 
           Obx(() {
-if (ctrl.transactions.isEmpty) {
-              return SliverToBoxAdapter(
+            if (ctrl.transactions.isEmpty) {
+              return const SliverToBoxAdapter(
                 child: WalletEmptyState(
                   icon: Icons.receipt_long_outlined,
                   title: 'No Transactions Yet',
@@ -152,17 +151,17 @@ class _WalletHeroCard extends StatelessWidget {
       child: Stack(
         children: [
           // Decorative circles
-          Positioned(
+          const Positioned(
             top: -50,
             right: -50,
             child: _Circle(size: 200, opacity: 0.05),
           ),
-          Positioned(
+          const Positioned(
             top: 40,
             right: 60,
             child: _Circle(size: 100, opacity: 0.06),
           ),
-          Positioned(
+          const Positioned(
             bottom: -30,
             left: -40,
             child: _Circle(size: 160, opacity: 0.07),
@@ -492,7 +491,6 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Row(
       children: [
         Expanded(
@@ -623,11 +621,19 @@ class _TransactionTile extends StatelessWidget {
         iconColor = WalletColors.amber;
         iconBg = WalletColors.amberBg;
         break;
+      case TransactionType.compensation:
+        // Rider payout for a failed-delivery exception claim — treated as
+        // a credit, distinct color so it reads apart from regular earnings.
+        icon = Icons.support_agent_rounded;
+        iconColor = WalletColors.blue;
+        iconBg = WalletColors.blueBg;
+        break;
     }
 
     final isCredit = tx.type == TransactionType.earning ||
         tx.type == TransactionType.bonus ||
-        tx.type == TransactionType.refund;
+        tx.type == TransactionType.refund ||
+        tx.type == TransactionType.compensation;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),

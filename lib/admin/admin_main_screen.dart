@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:smartstitch/admin/analytics/analytics_dashboard_screen.dart';
 
 import 'package:smartstitch/admin/dashboard/admin_dashboard.dart';
+import 'package:smartstitch/admin/notification/admin_notification_controller.dart';
 import 'package:smartstitch/admin/payment/admin_payment_screen.dart';
 import 'package:smartstitch/admin/report/reports.dart';
 import 'package:smartstitch/admin/services/admin_services_screen.dart';
@@ -19,6 +20,7 @@ import 'package:smartstitch/core/widgets/app_logo.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/admin/wallet/admin_withdrawal_screen.dart';
 import 'package:smartstitch/services/performance_screen.dart';
+import 'package:smartstitch/admin/compensation/failed_deliveries_screen.dart';
 
 class AdminMainScreen extends StatefulWidget {
   const AdminMainScreen({super.key});
@@ -41,8 +43,10 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     _NavItem(icon: Icons.report_problem_rounded, label: 'Complaints'),
     _NavItem(icon: Icons.star_rounded, label: 'Reviews'),
     _NavItem(icon: Icons.account_balance_wallet_rounded, label: 'Withdrawals'),
-    _NavItem(icon: Icons.bar_chart_rounded,label: 'Report'),
+    _NavItem(icon: Icons.bar_chart_rounded, label: 'Report'),
     _NavItem(icon: Icons.currency_exchange_rounded, label: 'Refunds'),
+    _NavItem(
+        icon: Icons.local_shipping_rounded, label: 'Failed Deliveries'),
   ];
 
   final List<Widget> _pages = const [
@@ -57,6 +61,7 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     AdminCombinedWithdrawalScreen(),
     ReportsScreen(),
     RefundRequestsScreen(),
+    FailedDeliveriesScreen(),
   ];
 
   Future<void> _logout() async {
@@ -96,9 +101,9 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
             child: Row(
               children: [
                 Builder(
-                  builder: (ctx) => _TopBarIcon(
+                  builder: (context) => _TopBarIcon(
                     icon: Icons.menu_rounded,
-                    onTap: () => Scaffold.of(ctx).openDrawer(),
+                    onTap: () => Scaffold.of(context).openDrawer(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -134,11 +139,14 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
                   onTap: () => setState(() => _isDarkMode = !_isDarkMode),
                 ),
                 const SizedBox(width: 8),
-                _TopBarIcon(
-                  icon: Icons.notifications_outlined,
-                  showBadge: true,
-                  onTap: () => Get.to(() => const AdminNotificationScreen()),
-                ),
+                Obx(() {
+                  final controller = Get.put(AdminNotificationController());
+                  return _TopBarIcon(
+                    icon: Icons.notifications_outlined,
+                    badgeCount: controller.unreadCount.value,
+                    onTap: () => Get.to(() => const AdminNotificationScreen()),
+                  );
+                }),
                 const SizedBox(width: 8),
                 const CircleAvatar(
                   radius: 18,
@@ -299,12 +307,12 @@ class _TopBarIcon extends StatelessWidget {
   const _TopBarIcon({
     required this.icon,
     required this.onTap,
-    this.showBadge = false,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final VoidCallback onTap;
-  final bool showBadge;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -323,7 +331,7 @@ class _TopBarIcon extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Icon(icon, color: Colors.white, size: 20),
-              if (showBadge)
+              if (badgeCount > 0)
                 Positioned(
                   right: -2,
                   top: -2,

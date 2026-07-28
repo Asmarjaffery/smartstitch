@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/routes/routes.dart';
+import 'package:smartstitch/riders/compensation/compensation_controller.dart';
+import 'package:smartstitch/riders/compensation/report_delivery_issue_sheet.dart';
 import 'rider_order_controller.dart';
 
 class RiderScreen extends StatelessWidget {
@@ -15,9 +17,14 @@ class RiderScreen extends StatelessWidget {
         ? Get.find<RiderOrderController>()
         : Get.put(RiderOrderController());
 
+    if (!Get.isRegistered<CompensationController>()) {
+      Get.put(CompensationController());
+    }
+
     final riderId = AuthController.to.currentUserId ?? '';
     ctrl.loadAssignedOrders(riderId);
-    ctrl.listenForCallRequests(riderId); // ✅ NEW: real-time "Ask AI to Call Rider" banner
+    ctrl.listenForCallRequests(
+        riderId); // ✅ NEW: real-time "Ask AI to Call Rider" banner
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -86,8 +93,6 @@ class RiderScreen extends StatelessWidget {
 }
 
 // ─── Tab Body — Obx aur TabBarView alag widgets mein ─────────────────────────
-// Yeh fix karta hai: [Get] improper use of GetX detected
-// Wajah: TabBarView ke andar Obx nahi honi chahiye — scope mismatch hoti hai
 class _RiderTabBody extends StatelessWidget {
   final RiderOrderController ctrl;
   final String riderId;
@@ -101,21 +106,19 @@ class _RiderTabBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Obx sirf loading check ke liye — TabBarView iske BAHAR hai
     return Obx(() {
       if (ctrl.isLoading.value) {
         return const Center(
             child: CircularProgressIndicator(color: AppColors.primary));
       }
-      // Reactive list values nikal lo — ab TabBarView ke andar safely pass hongi
       final allOrders = ctrl.assignedOrders.toList();
       final activeOrders = allOrders
-          .where((o) =>
-              o['status'] != 'delivered' && o['status'] != 'cancelled')
+          .where(
+              (o) => o['status'] != 'delivered' && o['status'] != 'cancelled')
           .toList();
       final historyOrders = allOrders
-          .where((o) =>
-              o['status'] == 'delivered' || o['status'] == 'cancelled')
+          .where(
+              (o) => o['status'] == 'delivered' || o['status'] == 'cancelled')
           .toList();
 
       return TabBarView(
@@ -200,8 +203,8 @@ class _LiveBadge extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           Text('Live',
-              style: AppTextStyles.labelSmall
-                  .copyWith(color: AppColors.success)),
+              style:
+                  AppTextStyles.labelSmall.copyWith(color: AppColors.success)),
         ],
       ),
     );
@@ -272,25 +275,29 @@ class _OrderList extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         itemCount: orders.length,
         separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (_, i) =>
-            _RiderOrderCard(order: orders[i], ctrl: ctrl, isDark: isDark),
+        itemBuilder: (_, i) => _RiderOrderCard(
+          order: orders[i],
+          ctrl: ctrl,
+          isDark: isDark,
+          riderId: riderId,
+        ),
       ),
     );
   }
 }
 
 // ─── Rider Order Card ─────────────────────────────────────────────────────────
-// NOTE: StatefulWidget — taake initState mein data set ho
-// aur Obx ke baghair bhi reactive rahe
 class _RiderOrderCard extends StatelessWidget {
   final Map<String, dynamic> order;
   final RiderOrderController ctrl;
   final bool isDark;
+  final String riderId;
 
   const _RiderOrderCard({
     required this.order,
     required this.ctrl,
     required this.isDark,
+    required this.riderId,
   });
 
   @override
@@ -299,21 +306,16 @@ class _RiderOrderCard extends StatelessWidget {
     final String status = order['status'] ?? '';
     final String riderStatus = order['riderStatus'] ?? 'pending';
     final String serviceTitle = order['serviceTitle'] ?? 'Service';
-    final double amount =
-        (order['servicePrice'] as num?)?.toDouble() ?? 0;
+    final double amount = (order['servicePrice'] as num?)?.toDouble() ?? 0;
 
-    // ── Customer info (enriched in controller) ──
     final String customerId = order['customerId'] ?? '';
     final String customerName = order['customerName'] ?? 'Customer';
     final String customerPhone = order['customerPhone'] ?? '';
 
-    // ── Artist info ──
     final String artistName = order['artistName'] ?? 'Artist';
     final String artistPhone = order['artistPhone'] ?? '';
-    final String shopFullAddress =
-        order['shopFullAddress'] ?? 'Tailor Shop';
+    final String shopFullAddress = order['shopFullAddress'] ?? 'Tailor Shop';
 
-    // ── Customer address (AddressModel fields stored as nested map) ──
     final addrRaw = order['address'];
     String deliverAddress = '';
     String deliverCity = '';
@@ -321,9 +323,8 @@ class _RiderOrderCard extends StatelessWidget {
       deliverAddress = addrRaw['fullAddress'] as String? ?? '';
       deliverCity = addrRaw['city'] as String? ?? '';
     }
-    final String fullDeliveryLine = [deliverAddress, deliverCity]
-        .where((s) => s.isNotEmpty)
-        .join(', ');
+    final String fullDeliveryLine =
+        [deliverAddress, deliverCity].where((s) => s.isNotEmpty).join(', ');
 
     final String appointmentDate = order['appointmentDate'] ?? '';
     final bool isActiveOrder = status != 'delivered' && status != 'cancelled';
@@ -332,15 +333,19 @@ class _RiderOrderCard extends StatelessWidget {
     final String statusLabel = _statusLabel(status, riderStatus);
     final IconData statusIcon = _statusIcon(status, riderStatus);
 
+    // ✅ NEW — delivery attempt fail hone par extra warning banner
+    final bool showFailedBanner = riderStatus == 'deliveryFailed';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkSurface : Colors.white,
         borderRadius: AppRadius.large,
         border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
-        boxShadow:
-            AppShadows.soft(isDark ? Colors.black : AppColors.primary),
+            color: showFailedBanner
+                ? AppColors.warning.withValues(alpha: 0.5)
+                : (isDark ? AppColors.darkBorder : AppColors.lightBorder)),
+        boxShadow: AppShadows.soft(isDark ? Colors.black : AppColors.primary),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,27 +387,52 @@ class _RiderOrderCard extends StatelessWidget {
                 ],
               ),
               _StatusBadge(
-                  label: statusLabel,
-                  icon: statusIcon,
-                  color: statusColor),
+                  label: statusLabel, icon: statusIcon, color: statusColor),
             ],
           ),
 
+          // ✅ NEW — Delivery Failed banner (dikhata hai kya wajah thi)
+          if (showFailedBanner) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: AppRadius.small,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.report_problem_rounded,
+                      size: 15, color: AppColors.warning),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      order['deliveryExceptionReason'] == 'customerDidNotAnswer'
+                          ? 'Customer did not answer. Reported to admin.'
+                          : 'Delivery attempt failed. Reported to admin.',
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 12),
           Divider(
-              color:
-                  isDark ? AppColors.darkDivider : AppColors.lightDivider,
+              color: isDark ? AppColors.darkDivider : AppColors.lightDivider,
               thickness: 1,
               height: 1),
           const SizedBox(height: 12),
 
-          // ── Step indicator (only for active orders) ──
           if (isActiveOrder) ...[
             _StepIndicator(riderStatus: riderStatus, isDark: isDark),
             const SizedBox(height: 12),
           ],
 
-          // ── Customer info ──
           _InfoRow(
             icon: Icons.person_outline_rounded,
             label: 'Customer',
@@ -417,7 +447,6 @@ class _RiderOrderCard extends StatelessWidget {
               isDark: isDark,
             ),
 
-          // ── Call + Ask AI (only for active orders) ──
           if (isActiveOrder && customerPhone.isNotEmpty) ...[
             const SizedBox(height: 8),
             Row(
@@ -445,7 +474,6 @@ class _RiderOrderCard extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          // ── Artist info ──
           _InfoRow(
             icon: Icons.storefront_outlined,
             label: 'Artist',
@@ -462,7 +490,6 @@ class _RiderOrderCard extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          // ── Pickup address ──
           _AddressRow(
             dot: AppColors.primary,
             label: 'Pickup',
@@ -471,7 +498,6 @@ class _RiderOrderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
 
-          // ── Delivery address ──
           _AddressRow(
             dot: AppColors.success,
             label: 'Deliver',
@@ -502,7 +528,6 @@ class _RiderOrderCard extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // ── Footer: earning + actions ──
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -519,15 +544,12 @@ class _RiderOrderCard extends StatelessWidget {
                           .copyWith(color: AppColors.primary)),
                 ],
               ),
-              // ── Flexible + Obx — always reads an observable so GetX
-              // never throws "improper use of Obx", aur footer overflow
-              // bhi nahi hota chhoti screens par ──
               Flexible(
                 child: Obx(() {
                   final tracking = ctrl.isTracking.value;
                   final activeId = ctrl.activeOrderId.value;
-                  return _buildActions(
-                      orderId, status, riderStatus, tracking, activeId);
+                  return _buildActions(context, orderId, status, riderStatus,
+                      tracking, activeId, customerId, amount, customerPhone);
                 }),
               ),
             ],
@@ -537,7 +559,6 @@ class _RiderOrderCard extends StatelessWidget {
     );
   }
 
-  // ── Call customer via device dialer ──
   Future<void> _callNumber(String phone) async {
     final uri = Uri(scheme: 'tel', path: phone);
     try {
@@ -553,7 +574,6 @@ class _RiderOrderCard extends StatelessWidget {
     }
   }
 
-  // ── Open customer address in Google Maps ──
   Future<void> _openMap(String address) async {
     final query = Uri.encodeComponent(address);
     final uri =
@@ -571,8 +591,16 @@ class _RiderOrderCard extends StatelessWidget {
     }
   }
 
-  Widget _buildActions(String orderId, String status, String riderStatus,
-      bool tracking, String activeId) {
+  Widget _buildActions(
+      BuildContext context,
+      String orderId,
+      String status,
+      String riderStatus,
+      bool tracking,
+      String activeId,
+      String customerId,
+      double amount,
+      String customerPhone) {
     if (status == 'delivered') {
       return const _StatusPillChip(
         label: 'Completed',
@@ -639,11 +667,55 @@ class _RiderOrderCard extends StatelessWidget {
                   : ctrl.startDelivery(orderId),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
+          Flexible(
+            child: _OutlinedPillButton(
+              label: 'Issue',
+              icon: Icons.warning_amber_rounded,
+              color: AppColors.warning,
+              onTap: () => ReportDeliveryIssueSheet.show(
+                context,
+                orderId: orderId,
+                customerId: customerId,
+                riderId: riderId,
+                artistId: order['artistId'] as String?,
+                deliveryFee: amount,
+                isCod: false,
+                attemptCount:
+                    (order['deliveryAttemptCount'] as num?)?.toInt() ?? 1,
+                customerPhone: customerPhone, 
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
           Flexible(
             child: _GradientPillButton(
               label: 'Delivered',
               onTap: () => _confirmDelivered(orderId),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // ✅ NEW — Step 3b: attempt fail ho chuka, admin review pending hai
+    if (riderStatus == 'deliveryFailed') {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: _StatusPillChip(
+              label: 'Reported',
+              icon: Icons.hourglass_top_rounded,
+              color: AppColors.warning,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: _GradientPillButton(
+              label: 'Reattempt',
+              icon: Icons.refresh_rounded,
+              onTap: () => ctrl.startDelivery(orderId),
             ),
           ),
         ],
@@ -663,8 +735,7 @@ class _RiderOrderCard extends StatelessWidget {
 
   void _confirmReject(String orderId) {
     Get.dialog(AlertDialog(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Order Reject Karo?'),
       content: const Text(
           'Kya aap sure hain? Admin ko dobara rider assign karna hoga.'),
@@ -686,8 +757,7 @@ class _RiderOrderCard extends StatelessWidget {
 
   void _confirmDelivered(String orderId) {
     Get.dialog(AlertDialog(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Mark as Delivered?'),
       content: const Text('Confirm karo ke order deliver ho gaya?'),
       actions: [
@@ -697,10 +767,8 @@ class _RiderOrderCard extends StatelessWidget {
             Get.back();
             ctrl.markDelivered(orderId);
           },
-          style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary),
-          child:
-              const Text('Confirm', style: TextStyle(color: Colors.white)),
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+          child: const Text('Confirm', style: TextStyle(color: Colors.white)),
         ),
       ],
     ));
@@ -714,6 +782,8 @@ class _RiderOrderCard extends StatelessWidget {
         return AppColors.info;
       case 'delivering':
         return AppColors.primary;
+      case 'deliveryFailed': // ✅ NEW
+        return AppColors.warning;
       case 'rejected':
         return AppColors.error;
       default:
@@ -729,6 +799,8 @@ class _RiderOrderCard extends StatelessWidget {
         return Icons.thumb_up_rounded;
       case 'delivering':
         return Icons.delivery_dining_rounded;
+      case 'deliveryFailed': // ✅ NEW
+        return Icons.report_problem_rounded;
       case 'rejected':
         return Icons.cancel_rounded;
       default:
@@ -744,6 +816,8 @@ class _RiderOrderCard extends StatelessWidget {
         return 'Accepted';
       case 'delivering':
         return 'Delivering';
+      case 'deliveryFailed': // ✅ NEW
+        return 'Delivery Failed';
       case 'rejected':
         return 'Rejected';
       default:
@@ -755,8 +829,18 @@ class _RiderOrderCard extends StatelessWidget {
     try {
       final dt = DateTime.parse(dateStr);
       const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
       ];
       return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
     } catch (_) {
@@ -777,7 +861,9 @@ class _StepIndicator extends StatelessWidget {
     const steps = ['Accept', 'Pickup', 'Delivered'];
     int activeStep = 0;
     if (riderStatus == 'accepted') activeStep = 1;
-    if (riderStatus == 'delivering') activeStep = 2;
+    if (riderStatus == 'delivering' || riderStatus == 'deliveryFailed') {
+      activeStep = 2;
+    }
 
     return Row(
       children: List.generate(steps.length * 2 - 1, (i) {
@@ -806,15 +892,11 @@ class _StepIndicator extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: done || active
                     ? AppColors.primary
-                    : (isDark
-                        ? AppColors.darkSurface2
-                        : AppColors.primarySoft),
+                    : (isDark ? AppColors.darkSurface2 : AppColors.primarySoft),
                 border: Border.all(
                   color: done || active
                       ? AppColors.primary
-                      : (isDark
-                          ? AppColors.darkBorder
-                          : AppColors.lightBorder),
+                      : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
                   width: 1.5,
                 ),
               ),
@@ -872,9 +954,7 @@ class _InfoRow extends StatelessWidget {
         children: [
           Icon(icon,
               size: 14,
-              color: isDark
-                  ? AppColors.darkTextHint
-                  : AppColors.lightTextHint),
+              color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint),
           const SizedBox(width: 6),
           Text('$label: ',
               style: AppTextStyles.caption.copyWith(
@@ -920,8 +1000,7 @@ class _AddressRow extends StatelessWidget {
         Container(
             width: 8,
             height: 8,
-            decoration:
-                BoxDecoration(color: dot, shape: BoxShape.circle)),
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
         const SizedBox(width: 6),
         Text('$label: ',
             style: AppTextStyles.caption.copyWith(
@@ -957,15 +1036,13 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: AppRadius.full),
+          color: color.withValues(alpha: 0.12), borderRadius: AppRadius.full),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: color),
           const SizedBox(width: 4),
-          Text(label,
-              style: AppTextStyles.labelSmall.copyWith(color: color)),
+          Text(label, style: AppTextStyles.labelSmall.copyWith(color: color)),
         ],
       ),
     );
@@ -986,15 +1063,13 @@ class _StatusPillChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: AppRadius.full),
+          color: color.withValues(alpha: 0.1), borderRadius: AppRadius.full),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: color, size: 14),
           const SizedBox(width: 5),
-          Text(label,
-              style: AppTextStyles.labelSmall.copyWith(color: color)),
+          Text(label, style: AppTextStyles.labelSmall.copyWith(color: color)),
         ],
       ),
     );
@@ -1019,8 +1094,7 @@ class _OutlinedPillButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: AppRadius.full,
@@ -1058,8 +1132,7 @@ class _GradientPillButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: const BoxDecoration(
           gradient: AppColors.primaryGradient,
           borderRadius: AppRadius.full,
@@ -1072,8 +1145,7 @@ class _GradientPillButton extends StatelessWidget {
               const SizedBox(width: 4),
             ],
             Text(label,
-                style: AppTextStyles.labelSmall
-                    .copyWith(color: Colors.white)),
+                style: AppTextStyles.labelSmall.copyWith(color: Colors.white)),
           ],
         ),
       ),

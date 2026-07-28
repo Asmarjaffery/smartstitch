@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ─── ENUMS ──────────────────────────────────────────────────
 
-enum TransactionType { earning, withdrawal, bonus, refund }
+// 'compensation' added additively for rider delivery-exception payouts —
+// existing 'earning' docs written by markDelivered() are untouched.
+enum TransactionType { earning, withdrawal, bonus, refund, compensation }
 
 enum TransactionStatus { completed, pending, cancelled, failed }
 
@@ -14,6 +16,25 @@ enum WithdrawalStatus { pending, approved, paid, rejected }
 enum PaymentMethod { bankAccount }
 
 // ─── EXTENSIONS ─────────────────────────────────────────────
+
+extension TransactionTypeX on TransactionType {
+  String get label {
+    switch (this) {
+      case TransactionType.earning:
+        return 'Delivery Earnings';
+      case TransactionType.withdrawal:
+        return 'Withdrawal';
+      case TransactionType.bonus:
+        return 'Bonus';
+      case TransactionType.refund:
+        return 'Refund';
+      case TransactionType.compensation:
+        return 'Compensation';
+    }
+  }
+
+  String get value => name;
+}
 
 extension TransactionStatusX on TransactionStatus {
   String get label {
@@ -82,6 +103,11 @@ class RiderWallet {
   final String riderId;
   final double availableBalance;
   final double pendingWithdrawal;
+  // Sum of compensation claims that are submitted/under review but not yet
+  // approved — mirrors CompensationStatus.pending in enums.dart. Once admin
+  // approves a claim, the payout is written as a `compensation` transaction
+  // and this figure drops accordingly.
+  final double pendingCompensation;
   final double todayEarnings;
   final double weekEarnings;
   final double monthEarnings;
@@ -92,6 +118,7 @@ class RiderWallet {
     required this.riderId,
     required this.availableBalance,
     required this.pendingWithdrawal,
+    this.pendingCompensation = 0,
     required this.todayEarnings,
     required this.weekEarnings,
     required this.monthEarnings,
@@ -103,6 +130,7 @@ class RiderWallet {
         riderId: riderId,
         availableBalance: 0,
         pendingWithdrawal: 0,
+        pendingCompensation: 0,
         todayEarnings: 0,
         weekEarnings: 0,
         monthEarnings: 0,
@@ -114,6 +142,7 @@ class RiderWallet {
         riderId: json['riderId'] ?? '',
         availableBalance: (json['availableBalance'] ?? 0).toDouble(),
         pendingWithdrawal: (json['pendingWithdrawal'] ?? 0).toDouble(),
+        pendingCompensation: (json['pendingCompensation'] ?? 0).toDouble(),
         todayEarnings: (json['todayEarnings'] ?? 0).toDouble(),
         weekEarnings: (json['weekEarnings'] ?? 0).toDouble(),
         monthEarnings: (json['monthEarnings'] ?? 0).toDouble(),
@@ -127,12 +156,35 @@ class RiderWallet {
         'riderId': riderId,
         'availableBalance': availableBalance,
         'pendingWithdrawal': pendingWithdrawal,
+        'pendingCompensation': pendingCompensation,
         'todayEarnings': todayEarnings,
         'weekEarnings': weekEarnings,
         'monthEarnings': monthEarnings,
         'lifetimeEarnings': lifetimeEarnings,
         'updatedAt': Timestamp.fromDate(updatedAt),
       };
+
+  RiderWallet copyWith({
+    double? availableBalance,
+    double? pendingWithdrawal,
+    double? pendingCompensation,
+    double? todayEarnings,
+    double? weekEarnings,
+    double? monthEarnings,
+    double? lifetimeEarnings,
+    DateTime? updatedAt,
+  }) =>
+      RiderWallet(
+        riderId: riderId,
+        availableBalance: availableBalance ?? this.availableBalance,
+        pendingWithdrawal: pendingWithdrawal ?? this.pendingWithdrawal,
+        pendingCompensation: pendingCompensation ?? this.pendingCompensation,
+        todayEarnings: todayEarnings ?? this.todayEarnings,
+        weekEarnings: weekEarnings ?? this.weekEarnings,
+        monthEarnings: monthEarnings ?? this.monthEarnings,
+        lifetimeEarnings: lifetimeEarnings ?? this.lifetimeEarnings,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
 }
 
 // ─── WALLET TRANSACTION MODEL ────────────────────────────────

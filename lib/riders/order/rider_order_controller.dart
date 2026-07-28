@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// ✅ NEW: instead of a popup dialog, the call-request now shows up as an
-// InDrive-style card inside the rider's own AI Assistant chat.
 import 'package:smartstitch/ai/controller/ai_chat_controller.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/riders/profile/profile_rider_controller.dart';

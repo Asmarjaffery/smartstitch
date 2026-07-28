@@ -37,6 +37,11 @@ class BookingModel {
   final double platformCommission;
   final DateTime? paidAt;
 
+  // ─── Custom Design Quote Flow ─────────────────────────────────────
+  final QuoteStatus quoteStatus;
+  final double? quotedPrice;
+  final DateTime? quotedAt;
+
   const BookingModel({
     required this.id,
     required this.customerId,
@@ -64,6 +69,9 @@ class BookingModel {
     this.artistAmount = 0,
     this.platformCommission = 0,
     this.paidAt,
+    this.quoteStatus = QuoteStatus.notRequired,
+    this.quotedPrice,
+    this.quotedAt,
   });
 
   factory BookingModel.fromJson(Map<String, dynamic> json) {
@@ -87,6 +95,15 @@ class BookingModel {
       final raw = json['paymentMethod'] as String?;
       if (raw != null && raw.isNotEmpty) {
         paymentMethod = PaymentMethod.values.byName(raw);
+      }
+    } catch (_) {}
+
+    // ─── Safe quoteStatus parse ────────────────────────────
+    QuoteStatus quoteStatus = QuoteStatus.notRequired;
+    try {
+      final raw = json['quoteStatus'] as String?;
+      if (raw != null && raw.isNotEmpty) {
+        quoteStatus = QuoteStatus.values.byName(raw);
       }
     } catch (_) {}
 
@@ -141,6 +158,10 @@ class BookingModel {
       artistAmount: (json['artistAmount'] as num?)?.toDouble() ?? 0,
       platformCommission: (json['platformCommission'] as num?)?.toDouble() ?? 0,
       paidAt: json['paidAt'] != null ? DateTime.parse(json['paidAt']) : null,
+      quoteStatus: quoteStatus,
+      quotedPrice: (json['quotedPrice'] as num?)?.toDouble(),
+      quotedAt:
+          json['quotedAt'] != null ? DateTime.parse(json['quotedAt']) : null,
     );
   }
 
@@ -171,6 +192,9 @@ class BookingModel {
         'artistAmount': artistAmount,
         'platformCommission': platformCommission,
         'paidAt': paidAt?.toIso8601String(),
+        'quoteStatus': quoteStatus.name,
+        'quotedPrice': quotedPrice,
+        'quotedAt': quotedAt?.toIso8601String(),
       };
 
   BookingModel copyWith({
@@ -188,6 +212,9 @@ class BookingModel {
     double? artistAmount,
     double? platformCommission,
     DateTime? paidAt,
+    QuoteStatus? quoteStatus,
+    double? quotedPrice,
+    DateTime? quotedAt,
   }) =>
       BookingModel(
         id: id,
@@ -216,5 +243,8 @@ class BookingModel {
         artistAmount: artistAmount ?? this.artistAmount,
         platformCommission: platformCommission ?? this.platformCommission,
         paidAt: paidAt ?? this.paidAt,
+        quoteStatus: quoteStatus ?? this.quoteStatus,
+        quotedPrice: quotedPrice ?? this.quotedPrice,
+        quotedAt: quotedAt ?? this.quotedAt,
       );
 }

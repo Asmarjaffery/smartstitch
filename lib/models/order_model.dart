@@ -38,6 +38,33 @@ class OrderModel {
   final String? cancellationDescription;
   final DateTime? refundedAt;
 
+  // ─── Custom Design Quote Flow ──────────────────────────────────────────
+  // Mirrors BookingModel's quote fields so order list/detail screens (both
+  // customer and artist) can show the quote state without needing to
+  // re-fetch the raw booking doc.
+  final QuoteStatus quoteStatus;
+  final double? quotedPrice;
+  final DateTime? quotedAt;
+
+  // ─── Delivery Exception (rider-reported failed delivery) ──────────────
+  // ✅ rider side sets `riderStatus`/`deliveryExceptionReason` on the
+  // booking doc when a delivery attempt fails (customer didn't answer,
+  // wrong address, etc). These are independent of `status`, which stays
+  // stuck at `riderAssigned` until an admin resolves the exception — so
+  // the customer-facing UI needs these fields to know something's wrong.
+  final String? riderStatus;
+  final String? deliveryExceptionReason;
+  final String? lastDeliveryExceptionId;
+
+  // ─── Customer Reschedule Requests ───────────────────────────────────────
+  // ✅ NEW: for delivery-failed orders, the customer can only *request* a
+  // new date — an admin has to approve it (see RescheduleRequestStatus).
+  // For customer-cancelled orders, this stays `none` and the existing
+  // direct self-service reschedule flow is used instead.
+  final RescheduleRequestStatus rescheduleRequestStatus;
+  final DateTime? requestedRescheduleDate;
+  final String? rescheduleRejectionReason;
+
   const OrderModel({
     required this.id,
     required this.customerId,
@@ -69,11 +96,38 @@ class OrderModel {
     this.cancellationReason,
     this.cancellationDescription,
     this.refundedAt,
+    this.quoteStatus = QuoteStatus.notRequired,
+    this.quotedPrice,
+    this.quotedAt,
+    this.riderStatus,
+    this.deliveryExceptionReason,
+    this.lastDeliveryExceptionId,
+    this.rescheduleRequestStatus = RescheduleRequestStatus.none,
+    this.requestedRescheduleDate,
+    this.rescheduleRejectionReason,
   });
 
   /// True only for bookings the Cancellation & Refund feature considers
   /// "paid" — i.e. eligible to auto-create a refund request on cancel.
   bool get isPaid => paymentStatus == PaymentStatus.completed;
+
+  /// True while this order is sitting with the artist for a custom-design
+  /// price quote (no fixed price yet, no payment taken).
+  bool get isAwaitingQuote => quoteStatus == QuoteStatus.pendingQuote;
+
+  /// True once the artist has sent a price and it's waiting on the
+  /// customer to accept or decline.
+  bool get hasPendingQuoteDecision => quoteStatus == QuoteStatus.quoted;
+
+  /// True when the rider has reported this delivery as failed and it's
+  /// sitting with admin for review — regardless of what `status` still
+  /// says (it stays `riderAssigned` until admin resolves it).
+  bool get isDeliveryFailed => riderStatus == 'deliveryFailed';
+
+  /// ✅ NEW: True while a reschedule request (for a delivery-failed order)
+  /// is sitting with admin, awaiting approval/rejection.
+  bool get hasPendingRescheduleRequest =>
+      rescheduleRequestStatus == RescheduleRequestStatus.pending;
 
   static double calcCommission(double total) => total * 0.10;
   static double calcArtistAmount(double total) => total * 0.90;
@@ -88,6 +142,15 @@ class OrderModel {
     CancellationReason? cancellationReason,
     String? cancellationDescription,
     DateTime? refundedAt,
+    QuoteStatus? quoteStatus,
+    double? quotedPrice,
+    DateTime? quotedAt,
+    String? riderStatus,
+    String? deliveryExceptionReason,
+    String? lastDeliveryExceptionId,
+    RescheduleRequestStatus? rescheduleRequestStatus,
+    DateTime? requestedRescheduleDate,
+    String? rescheduleRejectionReason,
   }) {
     return OrderModel(
       id: id,
@@ -121,6 +184,20 @@ class OrderModel {
       cancellationDescription:
           cancellationDescription ?? this.cancellationDescription,
       refundedAt: refundedAt ?? this.refundedAt,
+      quoteStatus: quoteStatus ?? this.quoteStatus,
+      quotedPrice: quotedPrice ?? this.quotedPrice,
+      quotedAt: quotedAt ?? this.quotedAt,
+      riderStatus: riderStatus ?? this.riderStatus,
+      deliveryExceptionReason:
+          deliveryExceptionReason ?? this.deliveryExceptionReason,
+      lastDeliveryExceptionId:
+          lastDeliveryExceptionId ?? this.lastDeliveryExceptionId,
+      rescheduleRequestStatus:
+          rescheduleRequestStatus ?? this.rescheduleRequestStatus,
+      requestedRescheduleDate:
+          requestedRescheduleDate ?? this.requestedRescheduleDate,
+      rescheduleRejectionReason:
+          rescheduleRejectionReason ?? this.rescheduleRejectionReason,
     );
   }
 
@@ -167,6 +244,21 @@ class OrderModel {
         refundedAt: json['refundedAt'] != null
             ? DateTime.tryParse(json['refundedAt'].toString())
             : null,
+        quoteStatus: _parseQuoteStatus(json['quoteStatus']),
+        quotedPrice: (json['quotedPrice'] as num?)?.toDouble(),
+        quotedAt: json['quotedAt'] != null
+            ? DateTime.tryParse(json['quotedAt'].toString())
+            : null,
+        riderStatus: json['riderStatus'] as String?,
+        deliveryExceptionReason: json['deliveryExceptionReason'] as String?,
+        lastDeliveryExceptionId: json['lastDeliveryExceptionId'] as String?,
+        rescheduleRequestStatus:
+            _parseRescheduleRequestStatus(json['rescheduleRequestStatus']),
+        requestedRescheduleDate: json['requestedRescheduleDate'] != null
+            ? DateTime.tryParse(json['requestedRescheduleDate'].toString())
+            : null,
+        rescheduleRejectionReason:
+            json['rescheduleRejectionReason'] as String?,
       );
 
   static PaymentStatus _parsePaymentStatus(dynamic value) {
@@ -194,6 +286,24 @@ class OrderModel {
       } catch (_) {}
     }
     return null;
+  }
+
+  static QuoteStatus _parseQuoteStatus(dynamic value) {
+    if (value is String) {
+      try {
+        return QuoteStatus.values.byName(value);
+      } catch (_) {}
+    }
+    return QuoteStatus.notRequired;
+  }
+
+  static RescheduleRequestStatus _parseRescheduleRequestStatus(dynamic value) {
+    if (value is String) {
+      try {
+        return RescheduleRequestStatus.values.byName(value);
+      } catch (_) {}
+    }
+    return RescheduleRequestStatus.none;
   }
 
   Map<String, dynamic> toJson() => {
@@ -227,5 +337,14 @@ class OrderModel {
         'cancellationReason': cancellationReason?.name,
         'cancellationDescription': cancellationDescription,
         'refundedAt': refundedAt?.toIso8601String(),
+        'quoteStatus': quoteStatus.name,
+        'quotedPrice': quotedPrice,
+        'quotedAt': quotedAt?.toIso8601String(),
+        'riderStatus': riderStatus,
+        'deliveryExceptionReason': deliveryExceptionReason,
+        'lastDeliveryExceptionId': lastDeliveryExceptionId,
+        'rescheduleRequestStatus': rescheduleRequestStatus.name,
+        'requestedRescheduleDate': requestedRescheduleDate?.toIso8601String(),
+        'rescheduleRejectionReason': rescheduleRejectionReason,
       };
 }

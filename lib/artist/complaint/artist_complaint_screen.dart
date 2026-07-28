@@ -25,8 +25,11 @@ class ArtistComplaintScreen extends StatelessWidget {
         }
 
         final complaints = controller.complaints;
-        final openCount =
-            complaints.where((c) => c.status.toLowerCase() != 'resolved' && c.status.toLowerCase() != 'closed').length;
+        final openCount = complaints
+            .where((c) =>
+                c.status.toLowerCase() != 'resolved' &&
+                c.status.toLowerCase() != 'closed')
+            .length;
 
         return RefreshIndicator(
           onRefresh: controller.refresh,
@@ -107,14 +110,20 @@ class _SummaryChip extends StatelessWidget {
             child: Icon(icon, color: color, size: 18),
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: AppTextStyles.h4),
-              Text(label,
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary))),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(value, style: AppTextStyles.h4, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: (Theme.of(context).textTheme.bodySmall?.color ??
+                            AppColors.lightTextSecondary))),
+              ],
+            ),
           ),
         ],
       ),
@@ -123,112 +132,10 @@ class _SummaryChip extends StatelessWidget {
 }
 
 // ─── Complaint Card ──────────────────────────────────────────────────────────
-
-class _ComplaintCard extends StatefulWidget {
+class _ComplaintCard extends StatelessWidget {
   const _ComplaintCard({required this.complaint});
 
   final ArtistComplaintItem complaint;
-
-  @override
-  State<_ComplaintCard> createState() => _ComplaintCardState();
-}
-
-class _ComplaintCardState extends State<_ComplaintCard> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = widget.complaint;
-    final statusColor = _statusColor(c.status);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: AppRadius.medium,
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            borderRadius: AppRadius.medium,
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(c.title, style: AppTextStyles.labelLarge),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.12),
-                          borderRadius: AppRadius.full,
-                        ),
-                        child: Text(
-                          c.status.toUpperCase(),
-                          style: AppTextStyles.labelSmall
-                              .copyWith(color: statusColor),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${c.customerName} • ${_relativeTime(c.createdAt)}',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary)),
-                  ),
-                  if (c.description.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(c.description, style: AppTextStyles.bodyMedium),
-                  ],
-                  if (c.timeline.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Icon(
-                          _expanded
-                              ? Icons.expand_less_rounded
-                              : Icons.expand_more_rounded,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _expanded
-                              ? 'Hide timeline'
-                              : 'View timeline (${c.timeline.length})',
-                          style: AppTextStyles.labelSmall
-                              .copyWith(color: Theme.of(context).colorScheme.primary),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _Timeline(entries: c.timeline),
-            ),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 200),
-          ),
-        ],
-      ),
-    );
-  }
 
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
@@ -237,83 +144,245 @@ class _ComplaintCardState extends State<_ComplaintCard> {
         return Colors.green;
       case 'in_progress':
       case 'in progress':
+      case 'reviewing':
         return Colors.blue;
       default:
         return Colors.orange;
     }
   }
-}
 
-// ─── Timeline Stepper ────────────────────────────────────────────────────────
-
-class _Timeline extends StatelessWidget {
-  const _Timeline({required this.entries});
-
-  final List<ComplaintTimelineEntry> entries;
+  Color _priorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'high':
+      case 'urgent':
+        return Colors.red;
+      case 'low':
+        return Colors.green;
+      default:
+        return Colors.orange;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: List.generate(entries.length, (i) {
-        final entry = entries[i];
-        final isLast = i == entries.length - 1;
+    final c = complaint;
+    final statusColor = _statusColor(c.status);
+    final priorityColor = _priorityColor(c.priority);
+    final mutedColor =
+        Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary;
 
-        return IntrinsicHeight(
-          child: Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: AppRadius.medium,
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header: issueType / subject + status badge ───────────
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    margin: const EdgeInsets.only(top: 4),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  if (!isLast)
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(width: 12),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(entry.title, style: AppTextStyles.labelMedium),
-                      if (entry.note.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          entry.note,
-                          style: AppTextStyles.bodySmall.copyWith(
-                              color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary)),
-                        ),
-                      ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c.issueType.isNotEmpty ? c.issueType : 'Complaint',
+                      style: AppTextStyles.labelLarge,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (c.subject.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        _relativeTime(entry.time),
-                        style: AppTextStyles.bodySmall.copyWith(
-                            color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary),
-                            fontSize: 11),
+                        c.subject,
+                        style: AppTextStyles.bodySmall.copyWith(color: mutedColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: AppRadius.full,
+                ),
+                child: Text(
+                  c.status.toUpperCase(),
+                  style: AppTextStyles.labelSmall.copyWith(color: statusColor),
+                  maxLines: 1,
                 ),
               ),
             ],
           ),
-        );
-      }),
+          const SizedBox(height: 6),
+
+          // ── Order / customer / time meta row ──────────────────────
+          Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (c.orderId.isNotEmpty)
+                Text(
+                  'Order #${c.orderId}',
+                  style: AppTextStyles.bodySmall.copyWith(color: mutedColor),
+                ),
+              Text(
+                '${c.userName} • ${_relativeTime(c.createdAt)}',
+                style: AppTextStyles.bodySmall.copyWith(color: mutedColor),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: priorityColor.withValues(alpha: 0.12),
+                  borderRadius: AppRadius.full,
+                ),
+                child: Text(
+                  '${c.priority} priority',
+                  style: AppTextStyles.labelSmall.copyWith(color: priorityColor),
+                ),
+              ),
+            ],
+          ),
+
+          // ── Description ───────────────────────────────────────────
+          if (c.description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(c.description, style: AppTextStyles.bodyMedium),
+          ],
+
+          // ── Evidence thumbnails ───────────────────────────────────
+          if (c.evidenceImages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: c.evidenceImages.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) => ClipRRect(
+                  borderRadius: AppRadius.small,
+                  child: Image.network(
+                    c.evidenceImages[i],
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 64,
+                      height: 64,
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Icon(Icons.image_not_supported_outlined, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          // ── Admin Reply — the key missing piece, now front and center ──
+          const SizedBox(height: 12),
+          _AdminReplyBlock(reply: c.adminReply, resolvedAt: c.resolvedAt),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Admin Reply block ────────────────────────────────────────────────────────
+//
+// Always rendered so the artist has a clear, consistent place to check for
+// a response — either the actual reply, or an explicit "still waiting"
+// state instead of the reply silently being absent.
+class _AdminReplyBlock extends StatelessWidget {
+  const _AdminReplyBlock({required this.reply, required this.resolvedAt});
+
+  final AdminReply? reply;
+  final DateTime? resolvedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+
+    if (reply == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: AppRadius.small,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.hourglass_top_rounded,
+                size: 16,
+                color: Theme.of(context).textTheme.bodySmall?.color ??
+                    AppColors.lightTextSecondary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Waiting for admin response',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: Theme.of(context).textTheme.bodySmall?.color ??
+                      AppColors.lightTextSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.06),
+        borderRadius: AppRadius.small,
+        border: Border.all(color: primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.support_agent_rounded, size: 16, color: primary),
+              const SizedBox(width: 6),
+              Text(
+                'Admin Reply',
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (reply!.repliedAt != null) ...[
+                const Spacer(),
+                Text(
+                  _relativeTime(reply!.repliedAt),
+                  style: AppTextStyles.labelSmall.copyWith(color: primary),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(reply!.message, style: AppTextStyles.bodyMedium),
+          if (resolvedAt != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Resolved ${_relativeTime(resolvedAt)}',
+              style: AppTextStyles.labelSmall.copyWith(color: Colors.green),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -330,15 +399,16 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         children: [
           Icon(Icons.check_circle_outline_rounded,
-              size: 48, color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary)),
+              size: 48,
+              color: (Theme.of(context).textTheme.bodySmall?.color ??
+                  AppColors.lightTextSecondary)),
           const SizedBox(height: 12),
           Text('No complaints', style: AppTextStyles.labelLarge),
           const SizedBox(height: 4),
           Text(
             'Complaints mentioning you will show up here.',
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall
-                .copyWith(color: (Theme.of(context).textTheme.bodySmall?.color ?? AppColors.lightTextSecondary)),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.lightTextSecondary),
           ),
         ],
       ),

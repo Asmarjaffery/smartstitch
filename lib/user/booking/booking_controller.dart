@@ -36,9 +36,9 @@ class BookingController extends GetxController {
   final RxString selectedTimeSlot = ''.obs;
   final RxBool isHomeVisit = false.obs;
 
-  /// Every design image the customer uploads for this booking. Each image
-  /// adds a flat Rs 200 to the total (see [designImageFee]) — 1 image =
-  /// Rs 200, 2 images = Rs 400, 3 = Rs 600, and so on.
+  /// Every design image the customer uploads for this booking. Uploading
+  /// any image (or adding special instructions) makes this a custom job —
+  /// see [requiresArtistQuote].
   final RxList<String> designImageUrls = <String>[].obs;
 
   final RxString specialInstructions = ''.obs;
@@ -72,15 +72,13 @@ class BookingController extends GetxController {
     '05:00 PM',
   ];
 
-  // ─── Extra charges ────────────────────────────────────────────────────
-  // Har design image pe Rs 200 charge — 1 image = 200, 2 = 400, 3 = 600...
-  double get designImageFee => designImageUrls.length * 200.0;
-
-  // Special instructions diye hain to flat Rs 200 extra.
-  double get specialInstructionsFee =>
-      specialInstructions.value.trim().isNotEmpty ? 200.0 : 0.0;
-
-  double get extraChargesFee => designImageFee + specialInstructionsFee;
+  // ─── Custom Design Quote Flow ─────────────────────────────────────────
+  // A design image or special instructions means this is a custom job —
+  // there's no fixed price for it, so instead of charging an automatic
+  // fee, the booking is held and sent to the artist to manually price.
+  // The customer only pays after they see and accept the artist's quote.
+  bool get requiresArtistQuote =>
+      designImageUrls.isNotEmpty || specialInstructions.value.trim().isNotEmpty;
 
   @override
   void onInit() {
@@ -251,10 +249,9 @@ class BookingController extends GetxController {
     selectedTimeSlot.value = slot;
   }
 
-  /// Uploads one design image and appends it to [designImageUrls]. Every
-  /// additional image the customer uploads increases [designImageFee] by
-  /// another flat Rs 200 (handled automatically since the fee is derived
-  /// from the list length).
+  /// Uploads one design image and appends it to [designImageUrls]. Any
+  /// image (or special instructions) marks this booking as needing an
+  /// artist quote instead of an instant fixed price.
   Future<void> uploadDesignImage() async {
     try {
       final XFile? image = await _picker.pickImage(
@@ -289,9 +286,7 @@ class BookingController extends GetxController {
       }
 
       designImageUrls.add(url);
-      AppHelpers.showSuccess(
-        'Design uploaded! Extra charge: Rs ${designImageFee.toInt()}',
-      );
+      AppHelpers.showSuccess('Design uploaded!');
     } catch (e) {
       uploadFailed.value = true;
       AppHelpers.showError('Failed to upload design.');
@@ -300,7 +295,7 @@ class BookingController extends GetxController {
     }
   }
 
-  /// Removes one uploaded design image (and its Rs 200 charge) by index.
+  /// Removes one uploaded design image by index.
   void removeDesignImage(int index) {
     if (index >= 0 && index < designImageUrls.length) {
       designImageUrls.removeAt(index);
@@ -431,12 +426,23 @@ class BookingController extends GetxController {
 
       final basePrice = selectedService.value!.basePrice;
       final deliveryFee = isHomeVisit.value ? 200.0 : 0.0;
-      // Design-upload fee doubles with every extra image (1 img = 200,
-      // 2 = 400, 3 = 600, ...) and special instructions add a flat 200.
-      final designFee = designImageFee;
-      final instructionsFee = specialInstructionsFee;
-      final totalAmount =
-          basePrice + deliveryFee + designFee + instructionsFee;
+
+      // ─── Custom design / instructions → hold for artist quote ────────
+      // Instead of charging an automatic fee, a booking with a design
+      // image or special instructions is sent to the artist to price
+      // manually. No payment is taken here — the customer pays only after
+      // they accept the artist's quote (see acceptQuote/payForQuotedBooking).
+      if (requiresArtistQuote) {
+        await _sendForArtistQuote(
+          bookingId: bookingId,
+          uid: uid,
+          basePrice: basePrice,
+          deliveryFee: deliveryFee,
+        );
+        return;
+      }
+
+      final totalAmount = basePrice + deliveryFee;
 
       // Populated only for Stripe bookings — used to power cancellation
       // eligibility ("paid" bookings only) and to let the admin refund
@@ -508,9 +514,6 @@ class BookingController extends GetxController {
         'address': isHomeVisit.value ? selectedAddress.value?.toJson() : null,
         'servicePrice': basePrice,
         'deliveryFee': deliveryFee,
-        'designImageUrls': designImageUrls,
-        'designImageFee': designFee,
-        'specialInstructionsFee': instructionsFee,
         'totalAmount': totalAmount,
         'platformCommission': (basePrice * 0.15).roundToDouble(),
         'artistAmount': (basePrice * 0.85).roundToDouble(),
@@ -569,10 +572,243 @@ class BookingController extends GetxController {
       myBookings.insert(0, booking);
       lastBooking.value = booking;
 
-      Get.off(() => const BookingConfirmScreen(isSuccess: true));
+      Get.offAll(() => BookingConfirmScreen(key: UniqueKey(), isSuccess: true));
       _resetForm();
     } catch (e) {
       AppHelpers.showError('Failed to create booking.');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // ─── Custom Design Quote Flow ──────────────────────────────────────────
+
+  /// Creates the booking with `quoteStatus: pendingQuote` and no payment
+  /// taken — the artist reviews the design/instructions and sends back a
+  /// price via their app, then the customer accepts/declines it (see
+  /// [acceptQuote], [declineQuote], [payForQuotedBooking]).
+  ///
+  /// Called from [createBooking] once the slot-conflict check has passed,
+  /// so it doesn't repeat that check itself. `isLoading` is managed by the
+  /// caller.
+  Future<void> _sendForArtistQuote({
+    required String bookingId,
+    required String uid,
+    required double basePrice,
+    required double deliveryFee,
+  }) async {
+    try {
+      final booking = BookingModel(
+        id: bookingId,
+        customerId: uid,
+        artistId: selectedArtistId.value,
+        serviceId: selectedService.value!.id,
+        serviceTitle: selectedService.value!.title,
+        servicePrice: basePrice,
+        deliveryFee: deliveryFee,
+        totalAmount: 0,
+        measurementId: selectedMeasurement.value?.id,
+        paymentMethod: null,
+        bookingType:
+            isHomeVisit.value ? BookingType.homeVisit : BookingType.dropOff,
+        appointmentDate: selectedDate.value!,
+        timeSlot: selectedTimeSlot.value,
+        address: isHomeVisit.value ? selectedAddress.value : null,
+        designImageUrl:
+            designImageUrls.isNotEmpty ? designImageUrls.first : null,
+        specialInstructions: specialInstructions.value.isNotEmpty
+            ? specialInstructions.value
+            : null,
+        isHomeVisit: isHomeVisit.value,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        quoteStatus: QuoteStatus.pendingQuote,
+      );
+
+      await _firebaseService.firestore
+          .collection('bookings')
+          .doc(booking.id)
+          .set({
+        ...booking.toJson(),
+        'address': isHomeVisit.value ? selectedAddress.value?.toJson() : null,
+        'designImageUrls': designImageUrls,
+        'paymentStatus': 'awaiting_quote',
+        'bookingStatus': 'pendingQuote',
+      });
+
+      try {
+        await NotificationService.instance.sendNotification(
+          recipientId: booking.artistId,
+          recipientRole: UserRole.artist,
+          type: NotificationType.orderUpdate,
+          title: 'New Custom Design Request!',
+          body:
+              'A customer sent a design/instructions for ${booking.serviceTitle}. Please review and send a price.',
+          data: {'bookingId': booking.id},
+        );
+        await NotificationService.instance.sendNotification(
+          recipientId: uid,
+          recipientRole: UserRole.customer,
+          type: NotificationType.orderUpdate,
+          title: 'Request Sent to Artist',
+          body:
+              'Your custom design request has been sent. We\'ll notify you once the artist sends a price.',
+          data: {'bookingId': booking.id},
+        );
+      } catch (e) {
+        AppHelpers.showError('Notification failed.');
+      }
+
+      myBookings.insert(0, booking);
+      lastBooking.value = booking;
+
+      Get.off(() => const BookingConfirmScreen(isAwaitingQuote: true));
+      _resetForm();
+    } catch (e) {
+      AppHelpers.showError('Failed to send request to artist.');
+    }
+  }
+
+  /// Called when the customer taps "Accept" on an artist's price quote —
+  /// takes them to the Confirm Booking screen to pick a payment method and
+  /// pay, using [booking.quotedPrice] instead of the service's base price.
+  void acceptQuote(BookingModel booking) {
+    if (booking.quotedPrice == null) {
+      AppHelpers.showError('No quote found for this booking.');
+      return;
+    }
+    selectedPaymentMethod.value = PaymentMethod.wallet;
+    Get.to(() => BookingConfirmScreen(quotedBooking: booking));
+  }
+
+  /// Called when the customer taps "Decline" on an artist's price quote.
+  /// Cancels the booking — no payment was ever taken for it.
+  Future<void> declineQuote(BookingModel booking) async {
+    try {
+      await _firebaseService.firestore
+          .collection('bookings')
+          .doc(booking.id)
+          .update({
+        'quoteStatus': QuoteStatus.declined.name,
+        'status': AppointmentStatus.cancelled.name,
+        'bookingStatus': 'cancelled',
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+
+      final index = myBookings.indexWhere((b) => b.id == booking.id);
+      if (index != -1) {
+        myBookings[index] = myBookings[index].copyWith(
+          quoteStatus: QuoteStatus.declined,
+          status: AppointmentStatus.cancelled,
+        );
+      }
+      AppHelpers.showSuccess('Quote declined. Booking cancelled.');
+    } catch (e) {
+      AppHelpers.showError('Failed to decline quote.');
+    }
+  }
+
+  /// Finalizes payment for a booking that was previously sent to the
+  /// artist for a design/instructions quote. Mirrors [createBooking]'s
+  /// payment logic but charges [booking.quotedPrice] instead of the
+  /// service's base price, and updates the existing booking document
+  /// instead of creating a new one.
+  Future<void> payForQuotedBooking(BookingModel booking) async {
+    debugPrint('🟢 payForQuotedBooking called — bookingId=${booking.id}, '
+        'method=${selectedPaymentMethod.value}, quotedPrice=${booking.quotedPrice}');
+
+    if (booking.quotedPrice == null) {
+      debugPrint('🔴 quotedPrice is null — aborting.');
+      AppHelpers.showError('No quote found for this booking.');
+      return;
+    }
+
+    try {
+      isLoading.value = true;
+      final totalAmount =
+          booking.servicePrice + booking.quotedPrice! + booking.deliveryFee;
+
+      String paymentStatus = 'unpaid';
+      String paymentIntentId = '';
+
+      if (selectedPaymentMethod.value == PaymentMethod.stripe) {
+        debugPrint('🟡 Going through Stripe branch...');
+        final result = await StripeService.instance.makePayment(
+          amount: totalAmount,
+          currency: 'pkr',
+          bookingId: booking.id,
+          customerEmail: AuthController.to.currentUser.value?.email,
+        );
+        debugPrint('🟡 Stripe result: success=${result.success}, message=${result.message}');
+
+        if (!result.success) {
+          AppHelpers.showError(
+            result.message.isNotEmpty ? result.message : 'Payment failed.',
+          );
+          isLoading.value = false;
+          return;
+        }
+
+        paymentStatus = 'paid';
+        paymentIntentId = result.transactionId ?? '';
+      } else {
+        debugPrint('🟢 Cash branch — paymentStatus set to paid directly.');
+        paymentStatus = 'paid';
+      }
+
+      debugPrint('🟢 Updating Firestore booking ${booking.id}...');
+      await _firebaseService.firestore
+          .collection('bookings')
+          .doc(booking.id)
+          .update({
+        // ✅ Keep the original base servicePrice untouched — it must not be
+        // overwritten with just the quoted extra-work amount, or the base
+        // price is lost forever once paid.
+        'totalAmount': totalAmount,
+        'paymentMethod': selectedPaymentMethod.value.name,
+        'paymentStatus': paymentStatus,
+        'paymentIntentId': paymentIntentId,
+        'quoteStatus': QuoteStatus.accepted.name,
+        'status': AppointmentStatus.accepted.name,
+        'bookingStatus': 'confirmed',
+        'platformCommission': (totalAmount * 0.15).roundToDouble(),
+        'artistAmount': (totalAmount * 0.85).roundToDouble(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+      debugPrint('🟢 Firestore update done.');
+
+      final updatedBooking = booking.copyWith(
+        status: AppointmentStatus.accepted,
+        quoteStatus: QuoteStatus.accepted,
+        paymentStatus: paymentStatus,
+        totalAmount: totalAmount,
+        paymentMethod: selectedPaymentMethod.value,
+      );
+
+      final index = myBookings.indexWhere((b) => b.id == booking.id);
+      if (index != -1) myBookings[index] = updatedBooking;
+      lastBooking.value = updatedBooking;
+
+      try {
+        await NotificationService.instance.sendNotification(
+          recipientId: booking.artistId,
+          recipientRole: UserRole.artist,
+          type: NotificationType.orderUpdate,
+          title: 'Quote Accepted & Paid!',
+          body:
+              '${booking.serviceTitle} — customer accepted your quote and paid Rs ${totalAmount.toInt()}.',
+          data: {'bookingId': booking.id},
+        );
+      } catch (e) {
+        debugPrint('🔴 Notification failed: $e');
+        AppHelpers.showError('Notification failed.');
+      }
+
+      debugPrint('🟢 Navigating to success screen...');
+      Get.offAll(() => BookingConfirmScreen(key: UniqueKey(), isSuccess: true));
+    } catch (e, st) {
+      debugPrint('🔴 payForQuotedBooking CRASHED: $e\n$st');
+      AppHelpers.showError('Failed to complete payment.');
     } finally {
       isLoading.value = false;
     }

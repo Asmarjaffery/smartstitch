@@ -49,9 +49,12 @@ class ArtistOrdersScreen extends StatelessWidget {
   Widget _buildFilterBar(BuildContext context, ArtistOrderController controller) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // ✅ Custom Design Quote Flow — new "Quote" tab for bookings sitting
+    // with the artist for pricing or waiting on the customer's decision.
     const filters = [
       {'key': 'all', 'label': 'All'},
       {'key': 'new', 'label': 'New'},
+      {'key': 'quote', 'label': 'Quote'},
       {'key': 'active', 'label': 'Active'},
       {'key': 'completed', 'label': 'Completed'},
       {'key': 'cancelled', 'label': 'Cancelled'},
@@ -70,8 +73,35 @@ class ArtistOrdersScreen extends StatelessWidget {
             final f = filters[i];
             return Obx(() {
               final selected = controller.filterStatus.value == f['key'];
+              final showBadge =
+                  f['key'] == 'quote' && controller.pendingQuoteCount > 0;
               return ChoiceChip(
-                label: Text(f['label']!),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(f['label']!),
+                    if (showBadge) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white.withValues(alpha: 0.3)
+                              : AppColors.error,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${controller.pendingQuoteCount}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: selected ? Colors.white : Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 selected: selected,
                 onSelected: (_) => controller.setFilter(f['key']!),
                 showCheckmark: false,
@@ -165,7 +195,23 @@ class _OrderCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              _StatusBadge(status: order.status),
+              // ✅ Quote-flow badge takes priority over the normal status
+              // badge — a booking waiting on a price/decision isn't
+              // meaningfully "Pending" in the usual sense.
+              if (order.quoteStatus == QuoteStatus.pendingQuote)
+                const _QuoteBadge(
+                  label: 'Send Quote',
+                  color: Color(0xFF8B5CF6),
+                  icon: Icons.hourglass_top_rounded,
+                )
+              else if (order.quoteStatus == QuoteStatus.quoted)
+                const _QuoteBadge(
+                  label: 'Awaiting Customer',
+                  color: Color(0xFFF59E0B),
+                  icon: Icons.local_offer_rounded,
+                )
+              else
+                _StatusBadge(status: order.status),
             ],
           ),
           const SizedBox(height: 6),
@@ -214,6 +260,37 @@ class _OrderCard extends StatelessWidget {
             ),
           ],
 
+          // ── Design images (only meaningful for a custom-design quote
+          // request — this is the artist's first look at what the
+          // customer wants priced) ──
+          if (order.quoteStatus != QuoteStatus.notRequired &&
+              order.designImages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 76,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: order.designImages.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) => ClipRRect(
+                  borderRadius: AppRadius.small,
+                  child: Image.network(
+                    order.designImages[i],
+                    width: 76,
+                    height: 76,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 76,
+                      height: 76,
+                      color: noteBg,
+                      child: Icon(Icons.image_outlined, color: accentColor),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+
           // ── Special instructions ──
           if (order.specialInstructions != null && order.specialInstructions!.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -233,23 +310,31 @@ class _OrderCard extends StatelessWidget {
           Divider(height: 20, color: isDark ? AppColors.darkDivider : AppColors.lightDivider),
 
           // ── Amount + Actions ──
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Your Earning', style: AppTextStyles.caption.copyWith(color: textSecondary)),
-                    Text(
-                      'Rs. ${order.artistAmount.toStringAsFixed(0)}',
-                      style: AppTextStyles.h5.copyWith(color: accentColor),
-                    ),
-                  ],
+          // ✅ While a quote hasn't been priced/accepted yet there's no
+          // "Your Earning" figure to show — the quote card below replaces
+          // this row entirely for those two states.
+          if (order.quoteStatus == QuoteStatus.pendingQuote)
+            _SendQuoteCard(order: order, controller: controller)
+          else if (order.quoteStatus == QuoteStatus.quoted)
+            _QuotedWaitingCard(quotedPrice: order.quotedPrice ?? 0)
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Your Earning', style: AppTextStyles.caption.copyWith(color: textSecondary)),
+                      Text(
+                        'Rs. ${order.artistAmount.toStringAsFixed(0)}',
+                        style: AppTextStyles.h5.copyWith(color: accentColor),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              ..._buildActions(isDark),
-            ],
-          ),
+                ..._buildActions(isDark),
+              ],
+            ),
         ],
       ),
     );
@@ -307,6 +392,142 @@ class _OrderCard extends StatelessWidget {
       default:
         return [];
     }
+  }
+}
+
+// ─── Send Quote Card ─────────────────────────────────────────────────────
+// Shown on a `pendingQuote` booking instead of the normal earning/actions
+// row — this is where the artist actually prices the custom design.
+class _SendQuoteCard extends StatelessWidget {
+  final OrderModel order;
+  final ArtistOrderController controller;
+  const _SendQuoteCard({required this.order, required this.controller});
+
+  void _openQuoteDialog(BuildContext context) {
+    final priceCtrl = TextEditingController();
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Send Price Quote'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Enter your price for this custom design:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixText: 'Rs ',
+                border: OutlineInputBorder(),
+                hintText: 'e.g. 2500',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final price = double.tryParse(priceCtrl.text.trim());
+              if (price == null || price <= 0) {
+                Get.snackbar('Invalid Price', 'Enter a valid amount.');
+                return;
+              }
+              Get.back();
+              controller.submitQuote(order.id, price);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Send Quote', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _openQuoteDialog(context),
+        icon: const Icon(Icons.local_offer_rounded, size: 18),
+        label: const Text('Send Price Quote'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isDark ? AppColors.primaryLight : AppColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: AppRadius.medium),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Quoted / Waiting on Customer Card ────────────────────────────────────
+class _QuotedWaitingCard extends StatelessWidget {
+  final double quotedPrice;
+  const _QuotedWaitingCard({required this.quotedPrice});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = const Color(0xFFF59E0B);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.18 : 0.1),
+        borderRadius: AppRadius.medium,
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.hourglass_top_rounded, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'You quoted Rs ${quotedPrice.toInt()} — waiting for customer.',
+              style: AppTextStyles.bodySmall.copyWith(color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Quote Badge (pendingQuote / quoted states) ────────────────────────────
+class _QuoteBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData icon;
+  const _QuoteBadge({required this.label, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.22 : 0.12),
+        borderRadius: AppRadius.full,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label, style: AppTextStyles.labelSmall.copyWith(color: color)),
+        ],
+      ),
+    );
   }
 }
 

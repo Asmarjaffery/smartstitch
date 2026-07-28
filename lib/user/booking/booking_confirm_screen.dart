@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/core/utils/helpers.dart';
+import 'package:smartstitch/models/booking_model.dart';
 import 'package:smartstitch/models/enums.dart';
 import 'package:smartstitch/routes/routes.dart';
 import 'package:smartstitch/services/pdf_service.dart';
@@ -12,10 +13,22 @@ class BookingConfirmScreen extends StatelessWidget {
   final bool isSuccess;
   final bool isPending;
 
+  /// Shown right after a design-image/instructions booking is sent to the
+  /// artist for pricing — no payment has happened yet.
+  final bool isAwaitingQuote;
+
+  /// Non-null when the customer is here to accept an artist's quote and
+  /// pay for it. When set, the whole screen prices and pays for
+  /// [quotedBooking] instead of the controller's live selectedService/etc
+  /// state (which was already reset after the original request was sent).
+  final BookingModel? quotedBooking;
+
   const BookingConfirmScreen({
     super.key,
     this.isSuccess = false,
     this.isPending = false,
+    this.isAwaitingQuote = false,
+    this.quotedBooking,
   });
 
   @override
@@ -64,6 +77,82 @@ class BookingConfirmScreen extends StatelessWidget {
             ),
           ),
         ),
+      );
+    }
+
+    // ─── Request Sent to Artist (Awaiting Quote) Screen ────────────
+    if (isAwaitingQuote) {
+      return Scaffold(
+        backgroundColor: bgColor,
+        bottomNavigationBar: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+          child: SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: () => Get.offAllNamed(AppRoutes.customerHome),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: primary,
+                  shape: const RoundedRectangleBorder(
+                      borderRadius: AppRadius.medium)),
+              icon: const Icon(Icons.home_outlined,
+                  color: Colors.white, size: 22),
+              label: Text('Go to Home',
+                  style:
+                      AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+            ),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    color: primarySoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: const BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.send_rounded,
+                          color: Colors.white, size: 44),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Text(
+                  'Request Sent to Artist!',
+                  style: AppTextStyles.h2.copyWith(
+                      fontWeight: FontWeight.w800, color: textPrimary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Your design/instructions have been sent to the artist for review.\nWe\'ll notify you as soon as they send a price — you can accept or decline it from My Bookings.',
+                  style: AppTextStyles.bodyMedium.copyWith(color: textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ─── Pay for an Artist's Quote Screen ──────────────────────────
+    if (quotedBooking != null) {
+      return _QuotedPaymentScreen(
+        booking: quotedBooking!,
+        isDark: isDark,
       );
     }
 
@@ -549,19 +638,25 @@ class BookingConfirmScreen extends StatelessWidget {
                   }),
                   Divider(height: 28, color: borderColor),
 
-                  // ✅ Price breakdown Step 3 — now includes design image
-                  // fee (Rs 200 per image, doubling with each extra
-                  // upload) and a flat Rs 200 special-instructions fee.
+                  // ✅ Price breakdown Step 3 — normal fixed-price flow
+                  // only (base price + delivery). Bookings with a design
+                  // image / special instructions never reach this — they
+                  // go through ctrl.requiresArtistQuote instead (see the
+                  // quote-pending note + hidden payment section below).
                   Obx(() {
+                    if (ctrl.requiresArtistQuote) {
+                      return Text(
+                        'Final price will be shared by the artist after reviewing your design/instructions.',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: textSecondary),
+                      );
+                    }
+
                     final basePrice =
                         ctrl.selectedService.value?.basePrice.toInt() ?? 0;
                     final isHome = ctrl.isHomeVisit.value;
                     final deliveryFee = isHome ? 200 : 0;
-                    final designFee = ctrl.designImageFee.toInt();
-                    final instructionsFee =
-                        ctrl.specialInstructionsFee.toInt();
-                    final total =
-                        basePrice + deliveryFee + designFee + instructionsFee;
+                    final total = basePrice + deliveryFee;
 
                     return Column(
                       children: [
@@ -590,35 +685,6 @@ class BookingConfirmScreen extends StatelessWidget {
                             ],
                           ),
                         ],
-                        if (designFee > 0) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                  'Design Upload Fee (${ctrl.designImageUrls.length}x)',
-                                  style: AppTextStyles.labelMedium
-                                      .copyWith(color: textSecondary)),
-                              Text('Rs $designFee',
-                                  style: AppTextStyles.labelMedium
-                                      .copyWith(color: AppColors.primary)),
-                            ],
-                          ),
-                        ],
-                        if (instructionsFee > 0) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Special Instructions Fee',
-                                  style: AppTextStyles.labelMedium
-                                      .copyWith(color: textSecondary)),
-                              Text('Rs $instructionsFee',
-                                  style: AppTextStyles.labelMedium
-                                      .copyWith(color: AppColors.primary)),
-                            ],
-                          ),
-                        ],
                         Divider(height: 20, color: borderColor),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -642,108 +708,115 @@ class BookingConfirmScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // ─── Info Note ────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                  color: primarySoft, borderRadius: AppRadius.medium),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline_rounded,
-                      color: primary, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Final price may vary based on design complexity. Artist will confirm after review.',
-                      style: AppTextStyles.bodySmall.copyWith(color: primary),
-                    ),
+            Obx(() => Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                      color: primarySoft, borderRadius: AppRadius.medium),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded,
+                          color: primary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          ctrl.requiresArtistQuote
+                              ? 'This booking will be sent to the artist for a price quote — you\'ll pay only after you review and accept it.'
+                              : 'Final price may vary based on design complexity. Artist will confirm after review.',
+                          style:
+                              AppTextStyles.bodySmall.copyWith(color: primary),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                )),
 
             const SizedBox(height: 28),
 
-            // ─── Payment Method ───────────────────────────────────
-            Text('Payment Method',
-                style: AppTextStyles.h4.copyWith(color: textPrimary)),
-            const SizedBox(height: 4),
-            Text('Select how you want to pay',
-                style: AppTextStyles.bodySmall.copyWith(color: textSecondary)),
-            const SizedBox(height: 14),
-
-            Obx(() => Row(
-                  children: [
-                    Expanded(
-                      child: _PaymentOption(
-                        icon: Icons.money_rounded,
-                        label: 'Cash',
-                        isSelected: ctrl.selectedPaymentMethod.value ==
-                            PaymentMethod.wallet,
-                        onTap: () => ctrl.selectedPaymentMethod.value =
-                            PaymentMethod.wallet,
-                        isDark: isDark,
-                        isFullWidth: true,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _PaymentOption(
-                        icon: Icons.credit_card_rounded,
-                        label: 'Card',
-                        isSelected: ctrl.selectedPaymentMethod.value ==
-                            PaymentMethod.stripe,
-                        onTap: () => ctrl.selectedPaymentMethod.value =
-                            PaymentMethod.stripe,
-                        isDark: isDark,
-                        isFullWidth: true,
-                      ),
-                    ),
-                  ],
-                )),
-
-            const SizedBox(height: 16),
-
+            // ─── Payment Method ─────────────────────────────────────
+            // Hidden while requiresArtistQuote is true — no payment is
+            // taken until the customer accepts the artist's quote.
             Obx(() {
-              if (ctrl.selectedPaymentMethod.value != PaymentMethod.wallet) {
-                return const SizedBox();
-              }
-              return Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                    color: primarySoft, borderRadius: AppRadius.medium),
-                child: Row(children: [
-                  const Icon(Icons.info_outline_rounded,
-                      color: primary, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Cash payment will be collected at the time of service.',
-                      style: AppTextStyles.caption.copyWith(color: primary),
-                    ),
-                  ),
-                ]),
-              );
-            }),
+              if (ctrl.requiresArtistQuote) return const SizedBox();
 
-            Obx(() {
-              if (ctrl.selectedPaymentMethod.value != PaymentMethod.stripe) {
-                return const SizedBox();
-              }
-              return Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                    color: primarySoft, borderRadius: AppRadius.medium),
-                child: Row(children: [
-                  const Icon(Icons.credit_card_rounded,
-                      color: primary, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'You will be redirected to Safepay\'s secure page to pay by debit/credit card.',
-                      style: AppTextStyles.caption.copyWith(color: primary),
-                    ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Payment Method',
+                      style: AppTextStyles.h4.copyWith(color: textPrimary)),
+                  const SizedBox(height: 4),
+                  Text('Select how you want to pay',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: textSecondary)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PaymentOption(
+                          icon: Icons.money_rounded,
+                          label: 'Cash',
+                          isSelected: ctrl.selectedPaymentMethod.value ==
+                              PaymentMethod.wallet,
+                          onTap: () => ctrl.selectedPaymentMethod.value =
+                              PaymentMethod.wallet,
+                          isDark: isDark,
+                          isFullWidth: true,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _PaymentOption(
+                          icon: Icons.credit_card_rounded,
+                          label: 'Card',
+                          isSelected: ctrl.selectedPaymentMethod.value ==
+                              PaymentMethod.stripe,
+                          onTap: () => ctrl.selectedPaymentMethod.value =
+                              PaymentMethod.stripe,
+                          isDark: isDark,
+                          isFullWidth: true,
+                        ),
+                      ),
+                    ],
                   ),
-                ]),
+                  const SizedBox(height: 16),
+                  if (ctrl.selectedPaymentMethod.value ==
+                      PaymentMethod.wallet)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: primarySoft, borderRadius: AppRadius.medium),
+                      child: Row(children: [
+                        const Icon(Icons.info_outline_rounded,
+                            color: primary, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Cash payment will be collected at the time of service.',
+                            style:
+                                AppTextStyles.caption.copyWith(color: primary),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  if (ctrl.selectedPaymentMethod.value ==
+                      PaymentMethod.stripe)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: primarySoft, borderRadius: AppRadius.medium),
+                      child: Row(children: [
+                        const Icon(Icons.credit_card_rounded,
+                            color: primary, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'You will be redirected to Safepay\'s secure page to pay by debit/credit card.',
+                            style:
+                                AppTextStyles.caption.copyWith(color: primary),
+                          ),
+                        ),
+                      ]),
+                    ),
+                ],
               );
             }),
 
@@ -923,12 +996,20 @@ class _BottomButtons extends StatelessWidget {
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.check_circle_outline_rounded,
-                                color: Colors.white),
+                            Icon(
+                              ctrl.requiresArtistQuote
+                                  ? Icons.send_rounded
+                                  : Icons.check_circle_outline_rounded,
+                              color: Colors.white,
+                            ),
                             const SizedBox(width: 8),
-                            Text('Confirm Booking',
-                                style: AppTextStyles.labelLarge
-                                    .copyWith(color: Colors.white)),
+                            Text(
+                              ctrl.requiresArtistQuote
+                                  ? 'Send to Artist for Quote'
+                                  : 'Confirm Booking',
+                              style: AppTextStyles.labelLarge
+                                  .copyWith(color: Colors.white),
+                            ),
                           ],
                         ),
                 ),
@@ -1172,5 +1253,365 @@ class _Step extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+// ─── Quoted Booking Payment Screen ─────────────────────────────────────────
+// Shown when the customer accepts an artist's price quote for a
+// design-image/instructions booking (see BookingController.acceptQuote).
+// Prices and pays for the given [booking] using the artist's quotedPrice,
+// instead of reading the controller's live selectedService/date/etc state
+// (which was already cleared after the original quote request was sent).
+class _QuotedPaymentScreen extends StatelessWidget {
+  final BookingModel booking;
+  final bool isDark;
+
+  const _QuotedPaymentScreen({required this.booking, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = BookingController.to;
+    final theme = Theme.of(context);
+
+    final bgColor =
+        isDark ? AppColors.darkBackground : theme.scaffoldBackgroundColor;
+    final surfaceColor =
+        isDark ? AppColors.darkSurface : theme.colorScheme.surface;
+    final textPrimary = isDark
+        ? AppColors.darkTextPrimary
+        : theme.textTheme.bodyLarge?.color ?? Colors.black;
+    final textSecondary =
+        isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    const primary = AppColors.primary;
+    final primarySoft = isDark ? AppColors.darkSurface2 : AppColors.primarySoft;
+
+    final servicePrice = booking.servicePrice;
+    final quotedPrice = booking.quotedPrice ?? 0;
+    final deliveryFee = booking.deliveryFee;
+    final total = servicePrice + quotedPrice + deliveryFee;
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        leading: GestureDetector(
+          onTap: () => Get.back(),
+          child: Container(
+            margin: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: primarySoft, borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: primary, size: 16),
+          ),
+        ),
+        title: Text('Confirm Payment',
+            style: AppTextStyles.h4.copyWith(color: textPrimary)),
+        centerTitle: true,
+        backgroundColor: bgColor,
+        elevation: 0,
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        decoration: BoxDecoration(
+          color: theme.scaffoldBackgroundColor,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Obx(() => SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    onPressed: ctrl.isLoading.value
+                        ? null
+                        : () => ctrl.payForQuotedBooking(booking),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: AppRadius.medium)),
+                    child: ctrl.isLoading.value
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.check_circle_outline_rounded,
+                                  color: Colors.white),
+                              const SizedBox(width: 8),
+                              Text('Pay Rs ${total.toInt()} & Confirm',
+                                  style: AppTextStyles.labelLarge
+                                      .copyWith(color: Colors.white)),
+                            ],
+                          ),
+                  ),
+                )),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: OutlinedButton(
+                onPressed: () async {
+                  await ctrl.declineQuote(booking);
+                  Get.back();
+                },
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.error),
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: AppRadius.medium)),
+                child: Text('Decline Quote',
+                    style: AppTextStyles.labelLarge
+                        .copyWith(color: AppColors.error)),
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  color: primarySoft, borderRadius: AppRadius.medium),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      color: primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'The artist reviewed your design/instructions and sent this price. Pay to confirm, or decline to cancel the booking.',
+                      style: AppTextStyles.bodySmall.copyWith(color: primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ─── Booking Summary Card ─────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                borderRadius: AppRadius.large,
+                border: Border.all(color: borderColor),
+                boxShadow: AppShadows.soft(primary),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: AppRadius.medium),
+                        child: const Icon(Icons.receipt_long_rounded,
+                            color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Text('Booking Summary',
+                          style: AppTextStyles.h4.copyWith(color: textPrimary)),
+                    ],
+                  ),
+                  Divider(height: 28, color: borderColor),
+                  _SummaryRow(
+                    icon: Icons.checkroom_rounded,
+                    label: 'Service',
+                    value: booking.serviceTitle,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  _SummaryRow(
+                    icon: booking.isHomeVisit
+                        ? Icons.home_outlined
+                        : Icons.store_outlined,
+                    label: 'Visit Type',
+                    value: booking.isHomeVisit ? 'Home Visit' : 'Drop Off',
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  _SummaryRow(
+                    icon: Icons.calendar_today_rounded,
+                    label: 'Date',
+                    value: _formatQuoteDate(booking.appointmentDate),
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 12),
+                  _SummaryRow(
+                    icon: Icons.access_time_rounded,
+                    label: 'Time',
+                    value: booking.timeSlot.isNotEmpty
+                        ? booking.timeSlot
+                        : 'Not specified',
+                    isDark: isDark,
+                  ),
+                  if (booking.isHomeVisit && booking.address != null) ...[
+                    const SizedBox(height: 12),
+                    _SummaryRow(
+                      icon: Icons.location_on_rounded,
+                      label: 'Your Address',
+                      value:
+                          '${booking.address!.fullAddress}, ${booking.address!.city}',
+                      isDark: isDark,
+                    ),
+                  ],
+                  if (booking.designImageUrl != null &&
+                      booking.designImageUrl!.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Your Design',
+                              style: AppTextStyles.labelMedium
+                                  .copyWith(color: textSecondary)),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: AppRadius.medium,
+                            child: Image.network(
+                              booking.designImageUrl!,
+                              width: double.infinity,
+                              height: 140,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (booking.specialInstructions != null &&
+                      booking.specialInstructions!.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: _SummaryRow(
+                        icon: Icons.notes_rounded,
+                        label: 'Instructions',
+                        value: booking.specialInstructions!,
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                  Divider(height: 28, color: borderColor),
+
+                  // ✅ Full breakdown — base service price + whatever extra
+                  // the artist quoted for the custom work in the design
+                  // image/instructions.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Service Price',
+                          style: AppTextStyles.labelMedium
+                              .copyWith(color: textSecondary)),
+                      Text('Rs ${servicePrice.toInt()}',
+                          style: AppTextStyles.labelMedium
+                              .copyWith(color: textPrimary)),
+                    ],
+                  ),
+                  if (quotedPrice > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Artist Quoted (Extra Work)',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: textSecondary)),
+                        Text('Rs ${quotedPrice.toInt()}',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: textPrimary)),
+                      ],
+                    ),
+                  ],
+                  if (deliveryFee > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Delivery Fee',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: textSecondary)),
+                        Text('Rs ${deliveryFee.toInt()}',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: primary)),
+                      ],
+                    ),
+                  ],
+                  Divider(height: 20, color: borderColor),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total Amount',
+                          style: AppTextStyles.labelLarge.copyWith(
+                              color: textPrimary, fontWeight: FontWeight.w700)),
+                      Text('Rs ${total.toInt()}',
+                          style: AppTextStyles.h4.copyWith(color: primary)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // ─── Payment Method ───────────────────────────────────
+            Text('Payment Method',
+                style: AppTextStyles.h4.copyWith(color: textPrimary)),
+            const SizedBox(height: 4),
+            Text('Select how you want to pay',
+                style: AppTextStyles.bodySmall.copyWith(color: textSecondary)),
+            const SizedBox(height: 14),
+            Obx(() => Row(
+                  children: [
+                    Expanded(
+                      child: _PaymentOption(
+                        icon: Icons.money_rounded,
+                        label: 'Cash',
+                        isSelected: ctrl.selectedPaymentMethod.value ==
+                            PaymentMethod.wallet,
+                        onTap: () => ctrl.selectedPaymentMethod.value =
+                            PaymentMethod.wallet,
+                        isDark: isDark,
+                        isFullWidth: true,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _PaymentOption(
+                        icon: Icons.credit_card_rounded,
+                        label: 'Card',
+                        isSelected: ctrl.selectedPaymentMethod.value ==
+                            PaymentMethod.stripe,
+                        onTap: () => ctrl.selectedPaymentMethod.value =
+                            PaymentMethod.stripe,
+                        isDark: isDark,
+                        isFullWidth: true,
+                      ),
+                    ),
+                  ],
+                )),
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatQuoteDate(DateTime dt) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 }

@@ -7,6 +7,7 @@ import 'package:smartstitch/controllers/auth_controller.dart';
 import 'package:smartstitch/core/theme/app.theme.dart';
 import 'package:smartstitch/core/utils/validators.dart';
 import 'package:smartstitch/core/widgets/app_logo.dart';
+import 'package:smartstitch/routes/routes.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -44,10 +45,9 @@ class _SignupScreenState extends State<SignupScreen>
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
 
-  // ── Profile image picker (optional — dummy avatar used if skipped) ──────
   final ImagePicker _picker = ImagePicker();
   XFile? _selectedImage;
-  Uint8List? _selectedImageBytes; // preview bytes, works on web + mobile
+  Uint8List? _selectedImageBytes;
 
   // Animation controllers
   late AnimationController _headerCtrl;
@@ -107,7 +107,6 @@ class _SignupScreenState extends State<SignupScreen>
     super.dispose();
   }
 
-  // ── Pick profile image (optional) ────────────────────────────────────────
   Future<void> _pickImage() async {
     final XFile? image = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -138,7 +137,7 @@ class _SignupScreenState extends State<SignupScreen>
         email: _emailController.text.trim(),
         password: _passwordController.text,
         phone: _phoneController.text.trim(),
-        profileImage: _selectedImage, // ✅ null = dummy avatar saved automatically
+        profileImage: _selectedImage,
       );
     } else if (_tabController.index == 1) {
       if (_selectedSpecializations.isEmpty) {
@@ -159,7 +158,7 @@ class _SignupScreenState extends State<SignupScreen>
         shopAddress: _shopAddressController.text.trim(),
         shopCity: _shopCityController.text.trim(),
         shopProvince: _shopProvinceController.text.trim(),
-        profileImage: _selectedImage, // ✅ null = dummy avatar saved automatically
+        profileImage: _selectedImage,
       );
     } else {
       AuthController.to.signupRider(
@@ -170,7 +169,7 @@ class _SignupScreenState extends State<SignupScreen>
         cnicNumber: _riderCnicController.text.trim(),
         vehicleType: _vehicleTypeController.text.trim(),
         vehicleNumber: _vehicleNumberController.text.trim(),
-        profileImage: _selectedImage, // ✅ null = dummy avatar saved automatically
+        profileImage: _selectedImage,
       );
     }
   }
@@ -179,7 +178,6 @@ class _SignupScreenState extends State<SignupScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // ✅ Theme-aware colors
     final bgColor = isDark ? AppColors.darkBackground : AppColors.lightBackground;
     final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final textPrimary = isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
@@ -190,10 +188,9 @@ class _SignupScreenState extends State<SignupScreen>
     final primarySoft = isDark ? AppColors.darkSurface2 : AppColors.primarySoft;
 
     return Scaffold(
-      backgroundColor: bgColor, // ✅ Theme-aware background
+      backgroundColor: bgColor,
       body: Stack(
         children: [
-          // Background decorative blobs (Theme-aware)
           Positioned(
             top: -100,
             right: -70,
@@ -210,6 +207,40 @@ class _SignupScreenState extends State<SignupScreen>
               physics: const BouncingScrollPhysics(),
               child: Column(
                 children: [
+                  // ✅ BACK BUTTON
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: GestureDetector(
+                        onTap: () => Get.toNamed(AppRoutes.customerHome),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurface : Colors.white,
+                            borderRadius: AppRadius.medium,
+                            border: Border.all(
+                              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 18,
+                            color: textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
                   // ── Header ───────────────────────────────────────────
                   SlideTransition(
                     position: _headerSlide,
@@ -217,7 +248,7 @@ class _SignupScreenState extends State<SignupScreen>
                       opacity: _logoFade,
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(24, 36, 24, 28),
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
                         child: Column(
                           children: [
                             ScaleTransition(
@@ -231,12 +262,12 @@ class _SignupScreenState extends State<SignupScreen>
                             const SizedBox(height: 20),
                             Text(
                               'Create Account',
-                              style: AppTextStyles.h1.copyWith(color: textPrimary), // ✅
+                              style: AppTextStyles.h1.copyWith(color: textPrimary),
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Join SmartStitch today',
-                              style: AppTextStyles.bodyMedium.copyWith(color: textSecondary), // ✅
+                              style: AppTextStyles.bodyMedium.copyWith(color: textSecondary),
                             ),
                           ],
                         ),
@@ -261,7 +292,7 @@ class _SignupScreenState extends State<SignupScreen>
                                 height: 52,
                                 padding: const EdgeInsets.all(5),
                                 decoration: BoxDecoration(
-                                  color: surfaceColor, // ✅ Theme-aware
+                                  color: surfaceColor,
                                   borderRadius: AppRadius.medium,
                                   boxShadow: AppShadows.soft(AppColors.primary),
                                 ),
@@ -271,7 +302,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       label: 'Customer',
                                       icon: Icons.person_outline_rounded,
                                       isSelected: _tabController.index == 0,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                       onTap: () {
                                         _tabController.animateTo(0);
                                         setState(() {});
@@ -281,7 +312,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       label: 'Artist',
                                       icon: Icons.content_cut_rounded,
                                       isSelected: _tabController.index == 1,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                       onTap: () {
                                         _tabController.animateTo(1);
                                         setState(() {});
@@ -291,7 +322,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       label: 'Rider',
                                       icon: Icons.delivery_dining_rounded,
                                       isSelected: _tabController.index == 2,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                       onTap: () {
                                         _tabController.animateTo(2);
                                         setState(() {});
@@ -306,7 +337,7 @@ class _SignupScreenState extends State<SignupScreen>
                               // ── Form Card ─────────────────────────
                               Container(
                                 decoration: BoxDecoration(
-                                  color: surfaceColor, // ✅ Theme-aware
+                                  color: surfaceColor,
                                   borderRadius: AppRadius.large,
                                   boxShadow: AppShadows.soft(AppColors.primary),
                                 ),
@@ -323,13 +354,13 @@ class _SignupScreenState extends State<SignupScreen>
                                                 ? 'Artist Details'
                                                 : 'Rider Details',
                                         key: ValueKey(_tabController.index),
-                                        style: AppTextStyles.h5.copyWith(color: textPrimary), // ✅
+                                        style: AppTextStyles.h5.copyWith(color: textPrimary),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       'Fill in your details to get started',
-                                      style: AppTextStyles.bodySmall.copyWith(color: textSecondary), // ✅
+                                      style: AppTextStyles.bodySmall.copyWith(color: textSecondary),
                                     ),
                                     const SizedBox(height: 20),
 
@@ -343,7 +374,7 @@ class _SignupScreenState extends State<SignupScreen>
                                               children: [
                                                 CircleAvatar(
                                                   radius: 45,
-                                                  backgroundColor: primarySoft, // ✅
+                                                  backgroundColor: primarySoft,
                                                   backgroundImage: _selectedImageBytes != null
                                                       ? MemoryImage(_selectedImageBytes!)
                                                       : null,
@@ -363,7 +394,7 @@ class _SignupScreenState extends State<SignupScreen>
                                                     decoration: BoxDecoration(
                                                       color: AppColors.primary,
                                                       shape: BoxShape.circle,
-                                                      border: Border.all(color: surfaceColor, width: 2), // ✅
+                                                      border: Border.all(color: surfaceColor, width: 2),
                                                     ),
                                                     child: const Icon(
                                                       Icons.camera_alt_rounded,
@@ -383,7 +414,7 @@ class _SignupScreenState extends State<SignupScreen>
                                                 _selectedImageBytes == null
                                                     ? 'Add profile photo (optional)'
                                                     : 'Photo selected',
-                                                style: AppTextStyles.bodySmall.copyWith(color: textSecondary), // ✅
+                                                style: AppTextStyles.bodySmall.copyWith(color: textSecondary),
                                               ),
                                               if (_selectedImageBytes != null) ...[
                                                 const SizedBox(width: 8),
@@ -403,7 +434,7 @@ class _SignupScreenState extends State<SignupScreen>
                                           if (_selectedImageBytes == null)
                                             Text(
                                               "Skip? We'll use a default avatar for you",
-                                              style: AppTextStyles.bodySmall.copyWith(color: textHint), // ✅
+                                              style: AppTextStyles.bodySmall.copyWith(color: textHint),
                                             ),
                                         ],
                                       ),
@@ -416,7 +447,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       hint: 'Full Name',
                                       icon: Icons.person_outline_rounded,
                                       validator: AppValidators.validateName,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                     ),
                                     const SizedBox(height: 14),
                                     _SignupField(
@@ -425,7 +456,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       icon: Icons.email_outlined,
                                       keyboardType: TextInputType.emailAddress,
                                       validator: AppValidators.validateEmail,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                     ),
                                     const SizedBox(height: 14),
                                     _SignupField(
@@ -434,7 +465,7 @@ class _SignupScreenState extends State<SignupScreen>
                                       icon: Icons.phone_outlined,
                                       keyboardType: TextInputType.phone,
                                       validator: AppValidators.validatePhone,
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                     ),
                                     const SizedBox(height: 14),
                                     _SignupField(
@@ -447,11 +478,11 @@ class _SignupScreenState extends State<SignupScreen>
                                         onTap: () => setState(() => _obscurePassword = !_obscurePassword),
                                         child: Icon(
                                           _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                          color: textHint, // ✅
+                                          color: textHint,
                                           size: 20,
                                         ),
                                       ),
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                     ),
                                     const SizedBox(height: 14),
                                     _SignupField(
@@ -464,11 +495,11 @@ class _SignupScreenState extends State<SignupScreen>
                                         onTap: () => setState(() => _obscureConfirm = !_obscureConfirm),
                                         child: Icon(
                                           _obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                          color: textHint, // ✅
+                                          color: textHint,
                                           size: 20,
                                         ),
                                       ),
-                                      isDark: isDark, // ✅
+                                      isDark: isDark,
                                     ),
 
                                     // ── Role-specific fields ────
@@ -476,9 +507,9 @@ class _SignupScreenState extends State<SignupScreen>
                                       duration: const Duration(milliseconds: 400),
                                       curve: Curves.easeInOutCubic,
                                       child: _tabController.index == 1
-                                          ? _buildArtistFields(isDark) // ✅
+                                          ? _buildArtistFields(isDark)
                                           : _tabController.index == 2
-                                              ? _buildRiderFields(isDark) // ✅
+                                              ? _buildRiderFields(isDark)
                                               : const SizedBox.shrink(),
                                     ),
                                   ],
@@ -492,7 +523,7 @@ class _SignupScreenState extends State<SignupScreen>
                                 label: 'Create Account',
                                 onPressed: _signup,
                                 isLoading: AuthController.to.isLoading.value,
-                                isDark: isDark, // ✅
+                                isDark: isDark,
                               )),
 
                               const SizedBox(height: 20),
@@ -504,7 +535,7 @@ class _SignupScreenState extends State<SignupScreen>
                                   children: [
                                     Text(
                                       'Already have an account? ',
-                                      style: AppTextStyles.bodyMedium.copyWith(color: textSecondary), // ✅
+                                      style: AppTextStyles.bodyMedium.copyWith(color: textSecondary),
                                     ),
                                     GestureDetector(
                                       onTap: () => Get.back(),
@@ -549,10 +580,10 @@ class _SignupScreenState extends State<SignupScreen>
         Row(children: [
           Container(width: 3, height: 18, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 10),
-          Text('Shop Address', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)), // ✅
+          Text('Shop Address', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)),
         ]),
         const SizedBox(height: 6),
-        Text('Where customers can find or drop off items', style: AppTextStyles.bodySmall.copyWith(color: textSecondary)), // ✅
+        Text('Where customers can find or drop off items', style: AppTextStyles.bodySmall.copyWith(color: textSecondary)),
         const SizedBox(height: 14),
         _SignupField(controller: _shopAddressController, hint: 'Shop Address (Street, Area)', icon: Icons.location_on_outlined, validator: (v) => v == null || v.trim().isEmpty ? 'Shop address is required' : null, isDark: isDark),
         const SizedBox(height: 14),
@@ -564,10 +595,10 @@ class _SignupScreenState extends State<SignupScreen>
         Row(children: [
           Container(width: 3, height: 18, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 10),
-          Text('Specializations', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)), // ✅
+          Text('Specializations', style: AppTextStyles.labelLarge.copyWith(color: textPrimary)),
         ]),
         const SizedBox(height: 6),
-        Text('Select all that apply', style: AppTextStyles.bodySmall.copyWith(color: textSecondary)), // ✅
+        Text('Select all that apply', style: AppTextStyles.bodySmall.copyWith(color: textSecondary)),
         const SizedBox(height: 14),
 
         Obx(() {
@@ -575,7 +606,7 @@ class _SignupScreenState extends State<SignupScreen>
             return const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 12), child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5)));
           }
           if (AuthController.to.specializations.isEmpty) {
-            return Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('No specializations available', style: AppTextStyles.bodySmall.copyWith(color: textSecondary))); // ✅
+            return Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('No specializations available', style: AppTextStyles.bodySmall.copyWith(color: textSecondary)));
           }
           return Wrap(
             spacing: 10,
@@ -605,7 +636,8 @@ class _SignupScreenState extends State<SignupScreen>
   }
 }
 
-// ─── Specialization Chip (Theme-aware) ──────────────────────────────────────────────────────
+// ─── WIDGETS ──────────────────────────────────────────────────────────────────────────────────
+
 class _SpecializationChip extends StatefulWidget {
   final String label;
   final bool isSelected;
@@ -652,15 +684,15 @@ class _SpecializationChipState extends State<_SpecializationChip> with SingleTic
           curve: Curves.easeInOut,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: widget.isSelected ? AppColors.primary : bgColor, // ✅
+            color: widget.isSelected ? AppColors.primary : bgColor,
             borderRadius: AppRadius.full,
-            border: Border.all(color: widget.isSelected ? AppColors.primary : borderColor, width: 1.5), // ✅
+            border: Border.all(color: widget.isSelected ? AppColors.primary : borderColor, width: 1.5),
             boxShadow: widget.isSelected ? AppShadows.soft(AppColors.primary) : [],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(widget.label, style: AppTextStyles.labelMedium.copyWith(color: widget.isSelected ? Colors.white : textColor)), // ✅
+              Text(widget.label, style: AppTextStyles.labelMedium.copyWith(color: widget.isSelected ? Colors.white : textColor)),
               if (widget.isSelected) ...[const SizedBox(width: 5), const Icon(Icons.check_rounded, color: Colors.white, size: 14)],
             ],
           ),
@@ -670,7 +702,6 @@ class _SpecializationChipState extends State<_SpecializationChip> with SingleTic
   }
 }
 
-// ─── Signup Field (Theme-aware) ─────────────────────────────────────────────────────────────
 class _SignupField extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
@@ -680,11 +711,11 @@ class _SignupField extends StatefulWidget {
   final String? Function(String?)? validator;
   final Widget? suffixIcon;
   final int maxLines;
-  final bool isDark; // ✅
+  final bool isDark;
 
   const _SignupField({
     required this.controller, required this.hint, required this.icon, this.keyboardType,
-    this.obscureText = false, this.validator, this.suffixIcon, this.maxLines = 1, required this.isDark, // ✅
+    this.obscureText = false, this.validator, this.suffixIcon, this.maxLines = 1, required this.isDark,
   });
 
   @override
@@ -716,19 +747,19 @@ class _SignupFieldState extends State<_SignupField> {
           obscureText: widget.obscureText,
           validator: widget.validator,
           maxLines: widget.maxLines,
-          style: AppTextStyles.bodyMedium.copyWith(color: textPrimary, fontWeight: FontWeight.w500), // ✅
+          style: AppTextStyles.bodyMedium.copyWith(color: textPrimary, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
             hintText: widget.hint,
-            hintStyle: AppTextStyles.bodyMedium.copyWith(color: textHint), // ✅
-            prefixIcon: Icon(widget.icon, color: textHint, size: 20), // ✅
+            hintStyle: AppTextStyles.bodyMedium.copyWith(color: textHint),
+            prefixIcon: Icon(widget.icon, color: textHint, size: 20),
             suffixIcon: widget.suffixIcon != null ? Padding(padding: const EdgeInsets.only(right: 4), child: widget.suffixIcon) : null,
             filled: true,
-            fillColor: _focused ? primarySoft : fillColor, // ✅
+            fillColor: _focused ? primarySoft : fillColor,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            border: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)), // ✅
-            enabledBorder: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)), // ✅
+            border: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)),
+            enabledBorder: OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: borderColor, width: 1.2)),
             focusedBorder: const OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: AppColors.primary, width: 1.8)),
-            errorBorder: const OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: AppColors.error, width: 1.2)), // ✅
+            errorBorder: const OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: AppColors.error, width: 1.2)),
             focusedErrorBorder: const OutlineInputBorder(borderRadius: AppRadius.medium, borderSide: BorderSide(color: AppColors.error, width: 1.8)),
           ),
         ),
@@ -737,12 +768,11 @@ class _SignupFieldState extends State<_SignupField> {
   }
 }
 
-// ─── Custom Tab Toggle Button (Theme-aware) ─────────────────────────────────────────────────
 class _TabToggleButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool isSelected;
-  final bool isDark; // ✅
+  final bool isDark;
   final VoidCallback onTap;
 
   const _TabToggleButton({required this.label, required this.icon, required this.isSelected, required this.isDark, required this.onTap});
@@ -767,9 +797,9 @@ class _TabToggleButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 16, color: isSelected ? Colors.white : textHint), // ✅
+              Icon(icon, size: 16, color: isSelected ? Colors.white : textHint),
               const SizedBox(width: 6),
-              Text(label, style: AppTextStyles.labelMedium.copyWith(color: isSelected ? Colors.white : textHint)), // ✅
+              Text(label, style: AppTextStyles.labelMedium.copyWith(color: isSelected ? Colors.white : textHint)),
             ],
           ),
         ),
@@ -778,7 +808,6 @@ class _TabToggleButton extends StatelessWidget {
   }
 }
 
-// ─── Background Blob ──────────────────────────────────────────────────────────
 class _BlurBlob extends StatelessWidget {
   final Color color;
   final double size;
@@ -788,14 +817,13 @@ class _BlurBlob extends StatelessWidget {
   Widget build(BuildContext context) => Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: color));
 }
 
-// ─── Primary Button (Theme-aware) ───────────────────────────────────────────────────────────
 class _PrimaryButton extends StatefulWidget {
   final String label;
   final VoidCallback onPressed;
   final bool isLoading;
-  final bool isDark; // ✅
+  final bool isDark;
 
-  const _PrimaryButton({required this.label, required this.onPressed, this.isLoading = false, required this.isDark}); // ✅
+  const _PrimaryButton({required this.label, required this.onPressed, this.isLoading = false, required this.isDark});
 
   @override
   State<_PrimaryButton> createState() => _PrimaryButtonState();

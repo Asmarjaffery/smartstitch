@@ -74,12 +74,12 @@ class ChatController extends GetxController {
 
   @override
   void onClose() {
-    // FIX: cancel all stream subscriptions to avoid memory leaks
+    // Cancel all stream subscriptions to avoid memory leaks
     _roomsSub?.cancel();
     _messagesSub?.cancel();
     _typingSub?.cancel();
 
-    // FIX: clear typing status before closing
+    // Clear typing status before closing
     _clearTypingStatus();
 
     if (myId.isNotEmpty) {
@@ -111,7 +111,7 @@ class ChatController extends GetxController {
     );
   }
 
-  // FIX: call this when leaving the chat screen
+  // Call this when leaving the chat screen
   Future<void> closeChat() async {
     await _clearTypingStatus();
     _messagesSub?.cancel();
@@ -125,7 +125,7 @@ class ChatController extends GetxController {
   // ─────────────────────────────────────────────────────────────
 
   void _listenToMessages(String chatRoomId) {
-    // FIX: cancel previous subscription before re-subscribing
+    // Cancel previous subscription before re-subscribing
     _messagesSub?.cancel();
 
     _messagesSub = _chatService.watchMessages(chatRoomId).listen(
@@ -139,7 +139,7 @@ class ChatController extends GetxController {
   }
 
   void _listenToTyping(String chatRoomId, String otherUserId) {
-    // FIX: cancel previous subscription before re-subscribing
+    // Cancel previous subscription before re-subscribing
     _typingSub?.cancel();
 
     _typingSub = _chatService.watchTypingStatus(chatRoomId, otherUserId).listen(
@@ -152,7 +152,8 @@ class ChatController extends GetxController {
     );
   }
 
-// chat_controller.dart mein yeh method add karo
+  /// Opens (or creates) a chat room with [otherUserId] and starts listening
+  /// to messages/typing status for that room.
   Future<void> openChat(String otherUserId) async {
     if (otherUserId.isEmpty) {
       AppHelpers.showError('Invalid user');
@@ -184,8 +185,12 @@ class ChatController extends GetxController {
   // ─────────────────────────────────────────────────────────────
   // PERSONAL INFO / CONTACT SHARING FILTER
   // ─────────────────────────────────────────────────────────────
-  // Sirf order-related conversation allow hoti hai. Phone numbers, emails,
-  // WhatsApp/Instagram/Facebook/Telegram handles waghera share karna block hai.
+  // Only order-related conversation is allowed. Sharing phone numbers,
+  // emails, WhatsApp/Instagram/Facebook/Telegram handles, or home addresses
+  // is blocked. Addresses are blocked in BOTH formats:
+  //   1) Keyword based: "house no 123", "street 12", "plot no 45"
+  //   2) Plain numbering based: "12/15 Nazimabad", "45 Gulshan" (no keyword,
+  //      just a number/plot pattern followed by an area/locality name)
 
   static final RegExp _phoneRegex = RegExp(
     r'(\+?\d[\d\-\.\s]{6,}\d)',
@@ -195,11 +200,27 @@ class ChatController extends GetxController {
     r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
   );
 
-  // House/street/plot type numbering — e.g. "house # 123", "street 12",
-  // "plot no 45", "ghar 23", "block b 12" — strong signal of an address.
+  // Keyword-based house/street/plot numbering — e.g. "house # 123",
+  // "street 12", "plot no 45", "ghar 23", "block b 12" — strong signal
+  // of an address.
   static final RegExp _addressNumberRegex = RegExp(
     r'\b(house|ghar|street|gali|block|sector|plot|flat|apartment|road|mohalla)\b[^\d]{0,10}\d+',
     caseSensitive: false,
+  );
+
+  // 🆕 Pakistani-style plot/house numbering WITHOUT a keyword —
+  // e.g. "12/15 Nazimabad", "B-45/2 Gulshan", "23/A Federal B Area".
+  // Pattern = (optional letter/dash) + digits + slash + digits,
+  // optionally followed by a letter.
+  static final RegExp _plotSlashNumberRegex = RegExp(
+    r'\b[A-Za-z]?-?\d{1,4}\s?\/\s?\d{1,4}[A-Za-z]?\b',
+  );
+
+  // 🆕 A number immediately followed by a capitalized word (likely a
+  // locality/area name) — e.g. "12 Nazimabad", "45 Gulshan", "10 Malir".
+  // Catches addresses written without any explicit keyword.
+  static final RegExp _numberPlusAreaNameRegex = RegExp(
+    r'\b\d{1,4}[A-Za-z]?\s+[A-Z][a-zA-Z]{2,}\b',
   );
 
   static const List<String> _personalInfoKeywords = [
@@ -239,7 +260,6 @@ class ChatController extends GetxController {
     'home address',
     'ghar ka address',
     'ghar ka pata',
-    'ghar ka pata',
     'mera pata',
     'mera address',
     'come to my house',
@@ -260,11 +280,35 @@ class ChatController extends GetxController {
     'send location',
     'location bhej',
     'live location',
+    // 🆕 Known Pakistani locality/area names — common in "12/15 Nazimabad"
+    // style addresses. Add more if needed for your city coverage.
+    'nazimabad',
+    'gulshan',
+    'malir',
+    'saddar',
+    'clifton',
+    'defence',
+    'dha',
+    'federal b area',
+    'korangi',
+    'landhi',
+    'liaquatabad',
+    'north karachi',
+    'north nazimabad',
+    'pechs',
+    'gulistan',
+    'johar',
+    'model colony',
+    'shah faisal',
+    'orangi',
+    'lyari',
+    'buffer zone',
   ];
 
-  /// Returns true agar text mein koi personal contact info (phone, email,
-  /// social handle) ya personal/home address detect ho. Sirf order/booking
-  /// ke through official address share honi chahiye, direct chat mein nahi.
+  /// Returns true if the text contains any personal contact info (phone,
+  /// email, social handle) or a personal/home address. Addresses should
+  /// only be shared through the official order/booking flow, never
+  /// directly in chat.
   bool containsPersonalInfo(String text) {
     if (text.trim().isEmpty) return false;
     final lower = text.toLowerCase();
@@ -272,6 +316,8 @@ class ChatController extends GetxController {
     if (_phoneRegex.hasMatch(text)) return true;
     if (_emailRegex.hasMatch(text)) return true;
     if (_addressNumberRegex.hasMatch(text)) return true;
+    if (_plotSlashNumberRegex.hasMatch(text)) return true;
+    if (_numberPlusAreaNameRegex.hasMatch(text)) return true;
 
     for (final keyword in _personalInfoKeywords) {
       if (lower.contains(keyword)) return true;
@@ -286,7 +332,7 @@ class ChatController extends GetxController {
   Future<void> sendText(String text, String receiverId) async {
     if (text.trim().isEmpty) return;
 
-    // FIX: capture roomId before any await — prevents race condition
+    // Capture roomId before any await — prevents race condition
     final roomId = currentRoomId.value;
     if (roomId.isEmpty) {
       AppHelpers.showError('Chat not ready, please wait');
@@ -296,7 +342,7 @@ class ChatController extends GetxController {
     // 🔒 Personal info / contact / address sharing block
     if (containsPersonalInfo(text)) {
       AppHelpers.showError(
-        'Personal number, address ya contact detail share karna allowed nahi hai. Sirf order se related baat karein.',
+        'Sharing personal number, address, or contact details is not allowed. Please keep the conversation order-related only.',
       );
       return;
     }
@@ -342,7 +388,7 @@ class ChatController extends GetxController {
 
     try {
       isSending.value = true;
-      // Web + Mobile dono ke liye bytes use karo
+      // Use bytes for both web and mobile
       final bytes = await picked.readAsBytes();
       final url = await _chatService.uploadImageBytes(bytes, roomId);
 
@@ -381,7 +427,7 @@ class ChatController extends GetxController {
   // ─────────────────────────────────────────────────────────────
 
   Future<void> startRecording() async {
-    // Web pe record package kaam nahi karta
+    // The record package doesn't work on web
     if (kIsWeb) {
       AppHelpers.showError('Voice notes are available in the mobile app');
 
@@ -409,7 +455,7 @@ class ChatController extends GetxController {
   }
 
   Future<void> stopAndSendVoice(String receiverId) async {
-    // FIX: capture roomId before any await
+    // Capture roomId before any await
     final roomId = currentRoomId.value;
 
     final path = await _recorder.stop();
@@ -494,7 +540,7 @@ class ChatController extends GetxController {
     _chatService.updateTypingStatus(roomId, myId, text.isNotEmpty);
   }
 
-  // FIX: clear typing status — call on dispose and on chat switch
+  // Clear typing status — call on dispose and on chat switch
   Future<void> _clearTypingStatus() async {
     final roomId = currentRoomId.value;
     if (roomId.isEmpty || myId.isEmpty) return;

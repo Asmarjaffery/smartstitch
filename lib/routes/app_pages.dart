@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:get/get.dart';
 import 'package:smartstitch/admin/admin_bindings.dart';
 import 'package:smartstitch/admin/admin_main_screen.dart';
@@ -47,6 +49,20 @@ import 'package:smartstitch/user/user_main_screen.dart';
 import 'package:smartstitch/user/wishlist/wishlist_screen.dart';
 import 'package:smartstitch/ai/screens/ai_chat_screen.dart';
 import 'package:smartstitch/ai/screens/ai_conversations_screen.dart';
+
+// ─── Compensation feature — Rider / Customer / Admin ──────────────────────
+// NOTE: adjust these three import blocks if your actual folder names differ
+// (assumed symmetric with lib/riders/compensation/, which already exists).
+import 'package:smartstitch/riders/compensation/compensation_controller.dart';
+import 'package:smartstitch/riders/wallet/rider_wallet_screen.dart';
+import 'package:smartstitch/riders/compensation/compensation_history_screen.dart';
+import 'package:smartstitch/user/compensation/customer_compensation_controller.dart';
+import 'package:smartstitch/user/compensation/delivery_failed_screen.dart';
+import 'package:smartstitch/user/compensation/reschedule_delivery_screen.dart';
+import 'package:smartstitch/user/compensation/outstanding_charge_screen.dart';
+import 'package:smartstitch/admin/compensation/admin_compensation_controller.dart';
+import 'package:smartstitch/admin/compensation/failed_deliveries_screen.dart';
+import 'package:smartstitch/controllers/auth_controller.dart';
 
 class AppPages {
   AppPages._();
@@ -100,6 +116,10 @@ class AppPages {
     ),
     GetPage(
       name: AppRoutes.bookingConfirm,
+      page: () => const confirm_screen.BookingConfirmScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.bookingSuccess,
       page: () => const confirm_screen.BookingConfirmScreen(),
     ),
     GetPage(
@@ -168,6 +188,49 @@ class AppPages {
   name: AppRoutes.designExplore,
   page: () => const DesignExploreScreen(),
 ),
+
+    // ─── Customer: Delivery Exceptions ──────────────────────
+    GetPage(
+      name: AppRoutes.customerDeliveryFailed,
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<CustomerCompensationController>()) {
+          Get.put(CustomerCompensationController());
+        }
+      }),
+      page: () {
+        final args = Get.arguments ?? {};
+        return DeliveryFailedScreen(
+          orderId: args['orderId'] as String? ?? '',
+          previousDeliveryFee:
+              (args['previousDeliveryFee'] as num?)?.toDouble() ?? 0,
+          onCancelOrder: args['onCancelOrder'] as VoidCallback?,
+        );
+      },
+    ),
+    GetPage(
+      name: AppRoutes.customerRescheduleDelivery,
+      page: () {
+        final args = Get.arguments ?? {};
+        return RescheduleDeliveryScreen(
+          orderId: args['orderId'] as String? ?? '',
+          previousDeliveryFee:
+              (args['previousDeliveryFee'] as num?)?.toDouble() ?? 0,
+          newDeliveryFee: (args['newDeliveryFee'] as num?)?.toDouble(),
+        );
+      },
+    ),
+    GetPage(
+      name: AppRoutes.customerOutstandingCharge,
+      page: () {
+        final args = Get.arguments ?? {};
+        return OutstandingChargeScreen(
+          orderId: args['orderId'] as String? ?? '',
+          outstandingAmount:
+              (args['outstandingAmount'] as num?)?.toDouble() ?? 0,
+        );
+      },
+    ),
+
     // ─── Rider ──────────────────────────────────────────────
     GetPage(
       name: AppRoutes.riderDashboard,
@@ -186,6 +249,36 @@ class AppPages {
         Get.lazyPut(() => NotificationCenterController());
       }),
     ),
+
+    // ─── Rider: Compensation & Delivery Exceptions ──────────
+    GetPage(
+      name: AppRoutes.riderWallet,
+      // RiderWalletScreen takes no params — it reads everything from
+      // WalletController via Get.find() internally, including a
+      // TransactionType.compensation case already wired into its
+      // transaction list. No CompensationController binding needed here.
+      page: () => const RiderWalletScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.riderCompensationHistory,
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<CompensationController>()) {
+          Get.put(CompensationController());
+        }
+      }),
+      page: () {
+        final riderId = (Get.arguments?['riderId'] as String?) ??
+            AuthController.to.currentUserId ??
+            '';
+        return CompensationHistoryScreen(riderId: riderId);
+      },
+    ),
+    // NOTE: riderReportDeliveryIssue / riderDeliveryAttemptSummary /
+    // riderIssueSubmitted are NOT registered here on purpose — they're
+    // pushed directly (ReportDeliveryIssueSheet.show(...) / Get.to(...))
+    // from rider_screen.dart with typed constructor params, which is
+    // simpler than threading everything through Get.arguments.
+
     // ─── Admin ──────────────────────────────────────────────
     GetPage(
       name: AppRoutes.adminDashboard,
@@ -204,6 +297,31 @@ class AppPages {
       name: AppRoutes.adminRefunds,
       page: () => const RefundRequestsScreen(),
     ),
+
+    // ─── Admin: Failed Deliveries & Compensation ────────────
+    GetPage(
+      name: AppRoutes.adminFailedDeliveries,
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<AdminCompensationController>()) {
+          Get.put(AdminCompensationController());
+        }
+      }),
+      page: () => const FailedDeliveriesScreen(),
+    ),
+    // Same screen/data as adminFailedDeliveries — the Figma spec listed
+    // "Rider Compensation" as a separate sidebar item, but it's the same
+    // delivery_exceptions list with the same filter tabs, so both routes
+    // point here rather than duplicating a whole screen.
+    GetPage(
+      name: AppRoutes.adminRiderCompensation,
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<AdminCompensationController>()) {
+          Get.put(AdminCompensationController());
+        }
+      }),
+      page: () => const FailedDeliveriesScreen(),
+    ),
+
     // ─── Artist ─────────────────────────────────────────────
     GetPage(
       name: AppRoutes.artistDashboard,

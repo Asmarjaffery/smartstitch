@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
 import 'package:smartstitch/controllers/chat_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/chat_room_model.dart';
@@ -21,15 +22,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final RxBool _isSearching = false.obs;
   final RxString _query = ''.obs;
 
+  // 🆕 Tracks whether the currently logged-in account is an artist.
+  // null  = still loading, true = artist, false = regular user/customer.
+  final Rxn<bool> _amIArtist = Rxn<bool>();
+  StreamSubscription<DocumentSnapshot>? _roleSub;
+
   @override
   void initState() {
     super.initState();
     controller = Get.find<ChatController>();
+
+    // 🆕 Figure out the current account's role once, and keep it in sync.
+    _roleSub = FirebaseFirestore.instance
+        .collection('artists')
+        .doc(controller.myId)
+        .snapshots()
+        .listen((doc) {
+      _amIArtist.value = doc.exists;
+    });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _roleSub?.cancel();
     super.dispose();
   }
 
@@ -70,7 +86,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 autofocus: true,
                 style: TextStyle(color: textPrimary, fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'Search artists...',
+                  hintText: 'Search...',
                   hintStyle: TextStyle(color: textHint),
                   border: InputBorder.none,
                 ),
@@ -92,32 +108,26 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 iconColor: textPrimary,
                 onTap: _toggleSearch,
               )),
-          Obx(() => _isSearching.value
-              ? const SizedBox.shrink()
-              : Row(
-                  children: [
-                    const SizedBox(width: 10),
-                    _RoundIconButton(
-                      icon: Icons.add_rounded,
-                      background: AppColors.primary,
-                      iconColor: Colors.white,
-                      onTap: () => Get.toNamed('/user-discovery'),
-                    ),
-                  ],
-                )),
+          // 🆕 The "+" (add) button has been removed entirely for both
+          // regular users and artists — search + the strip below are the
+          // only ways to start a new chat now.
           const SizedBox(width: 12),
         ],
       ),
       body: Obx(() {
-        // ── SEARCH MODE: show matching artists only ─────────────────────
+        final bool? amIArtist = _amIArtist.value;
+
+        // ── SEARCH MODE: show matching contacts only ────────────────────
+        // Regular users search "artists"; artists search "users".
         if (_isSearching.value) {
-          return _ArtistSearchResults(
+          return _ContactSearchResults(
             query: _query.value,
             controller: controller,
+            isArtist: amIArtist ?? false,
           );
         }
 
-        // ── DEFAULT MODE: all artists strip + existing chats ────────────
+        // ── DEFAULT MODE: contacts strip + existing chats ───────────────
         if (controller.isLoading.value) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
@@ -127,10 +137,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
         final onlineRooms =
             controller.rooms.where((r) => r.isOtherOnline).toList();
 
+        // 🆕 Rooms already shown in the "Online now" strip are excluded
+        // from the list below, so nobody's chat/profile appears twice.
+        final onlineIds = onlineRooms.map((r) => r.id).toSet();
+        final listRooms =
+            controller.rooms.where((r) => !onlineIds.contains(r.id)).toList();
+
         return Column(
           children: [
-            // ─── All Artists Strip (start a chat with anyone) ──────────
-            _AllArtistsStrip(controller: controller),
+            // ─── Contacts Strip (artists for users, users for artists) ──
+            _ContactsStrip(controller: controller, isArtist: amIArtist),
 
             // ─── Online Users Strip ─────────────────────────────────────
             if (onlineRooms.isNotEmpty)
@@ -139,29 +155,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 controller: controller,
               ),
 
-            // ─── Chat List ───────────────────────────────────────────────
+            // ─── Chat List (online rooms excluded — shown above only) ───
             Expanded(
               child: controller.rooms.isEmpty
                   ? const _EmptyState()
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.only(top: 4),
-                      itemCount: controller.rooms.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        indent: 82,
-                        endIndent: 16,
-                        color: border,
-                      ),
-                      itemBuilder: (context, index) {
-                        final room = controller.rooms[index];
-                        return _AnimatedChatTile(
-                          room: room,
-                          controller: controller,
-                          index: index,
-                        );
-                      },
-                    ),
+                  : listRooms.isEmpty
+                      ? const SizedBox.shrink()
+                      : ListView.separated(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.only(top: 4),
+                          itemCount: listRooms.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            indent: 82,
+                            endIndent: 16,
+                            color: border,
+                          ),
+                          itemBuilder: (context, index) {
+                            final room = listRooms[index];
+                            return _AnimatedChatTile(
+                              room: room,
+                              controller: controller,
+                              index: index,
+                            );
+                          },
+                        ),
             ),
           ],
         );
@@ -170,12 +188,46 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 }
 
-// ─── All Artists Strip ─────────────────────────────────────────────────────
-// Har artist top pe dikhta hai taake user kisi se bhi seedha chat shuru kar sake.
+// ─── Contacts Strip ─────────────────────────────────────────────────────────
+// For a regular customer this shows every artist (so they can start a chat
+// with anyone). For an artist account it shows every regular user/customer
+// instead — never both, and never the current account's own doc.
 
-class _AllArtistsStrip extends StatelessWidget {
+class _ContactsStrip extends StatelessWidget {
   final ChatController controller;
-  const _AllArtistsStrip({required this.controller});
+  final bool? isArtist; // null while role is still loading
+
+  const _ContactsStrip({required this.controller, required this.isArtist});
+
+  @override
+  Widget build(BuildContext context) {
+    if (isArtist == null) {
+      // Still figuring out the role — render nothing to avoid flicker.
+      return const SizedBox.shrink();
+    }
+
+    final String collection = isArtist! ? 'users' : 'artists';
+    final String title = isArtist! ? 'Customers' : 'Artists';
+
+    return _ContactsStripContent(
+      controller: controller,
+      collection: collection,
+      title: title,
+    );
+  }
+}
+
+// The actual strip UI — collection/title driven by the caller.
+class _ContactsStripContent extends StatelessWidget {
+  final ChatController controller;
+  final String collection;
+  final String title;
+
+  const _ContactsStripContent({
+    required this.controller,
+    required this.collection,
+    required this.title,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -185,16 +237,16 @@ class _AllArtistsStrip extends StatelessWidget {
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('artists').snapshots(),
+      stream: FirebaseFirestore.instance.collection(collection).snapshots(),
       builder: (context, snapshot) {
-        // 🔎 DEBUG: agar artists nahi dikh rahe to yeh line console mein
-        // asal wajah bata degi (permission-denied, wrong collection, etc.)
+        // 🔎 DEBUG: if contacts aren't showing up, this line will reveal the
+        // real reason in console (permission-denied, wrong collection, etc.)
         if (snapshot.hasError) {
-          debugPrint('❌ Artists strip error: ${snapshot.error}');
+          debugPrint('❌ $title strip error: ${snapshot.error}');
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Artists load nahi ho rahe: ${snapshot.error}',
+              'Could not load $title: ${snapshot.error}',
               style: const TextStyle(color: AppColors.error, fontSize: 12),
             ),
           );
@@ -213,19 +265,19 @@ class _AllArtistsStrip extends StatelessWidget {
         }
 
         final allDocs = snapshot.data?.docs ?? [];
-        debugPrint('✅ Artists fetched: ${allDocs.length}');
+        debugPrint('✅ $title fetched: ${allDocs.length}');
 
         if (allDocs.isEmpty) {
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Text(
-              'Koi artist available nahi hai abhi',
+              'No $title available right now',
               style: TextStyle(color: textPrimary.withValues(alpha: 0.6), fontSize: 13),
             ),
           );
         }
 
-        // Apna khud ka artist doc (agar current user khud artist hai) exclude karo
+        // Exclude the current user's own doc, if present.
         final docs =
             allDocs.where((d) => d.id != controller.myId).toList();
 
@@ -241,7 +293,7 @@ class _AllArtistsStrip extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                 child: Text(
-                  'Artists',
+                  title,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
@@ -262,12 +314,12 @@ class _AllArtistsStrip extends StatelessWidget {
                     final name = (data['businessName'] ??
                             data['name'] ??
                             data['displayName'] ??
-                            'Artist')
+                            'Contact')
                         .toString();
                     final image = (data['profileImageUrl'] ?? '').toString();
 
-                    return _ArtistQuickAvatar(
-                      artistId: doc.id,
+                    return _ContactQuickAvatar(
+                      contactId: doc.id,
                       name: name,
                       imageUrl: image,
                       controller: controller,
@@ -283,14 +335,14 @@ class _AllArtistsStrip extends StatelessWidget {
   }
 }
 
-class _ArtistQuickAvatar extends StatelessWidget {
-  final String artistId;
+class _ContactQuickAvatar extends StatelessWidget {
+  final String contactId;
   final String name;
   final String imageUrl;
   final ChatController controller;
 
-  const _ArtistQuickAvatar({
-    required this.artistId,
+  const _ContactQuickAvatar({
+    required this.contactId,
     required this.name,
     required this.imageUrl,
     required this.controller,
@@ -304,10 +356,10 @@ class _ArtistQuickAvatar extends StatelessWidget {
 
     return GestureDetector(
       onTap: () async {
-        await controller.openChat(artistId);
+        await controller.openChat(contactId);
         Get.to(
           () => ChatRoomScreen(
-            otherUserId: artistId,
+            otherUserId: contactId,
             roomName: name,
             profileImageUrl: imageUrl.isNotEmpty ? imageUrl : null,
           ),
@@ -348,13 +400,19 @@ class _ArtistQuickAvatar extends StatelessWidget {
   }
 }
 
-// ─── Artist Search Results ─────────────────────────────────────────────────
+// ─── Contact Search Results ────────────────────────────────────────────────
+// Regular users search "artists"; artists search "users".
 
-class _ArtistSearchResults extends StatelessWidget {
+class _ContactSearchResults extends StatelessWidget {
   final String query;
   final ChatController controller;
+  final bool isArtist;
 
-  const _ArtistSearchResults({required this.query, required this.controller});
+  const _ContactSearchResults({
+    required this.query,
+    required this.controller,
+    required this.isArtist,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -363,16 +421,19 @@ class _ArtistSearchResults extends StatelessWidget {
     final textPrimary =
         isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;
 
+    final String collection = isArtist ? 'users' : 'artists';
+    final String noun = isArtist ? 'user' : 'artist';
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('artists').snapshots(),
+      stream: FirebaseFirestore.instance.collection(collection).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          debugPrint('❌ Artist search error: ${snapshot.error}');
+          debugPrint('❌ $noun search error: ${snapshot.error}');
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                'Artists load nahi ho rahe: ${snapshot.error}',
+                'Could not load $noun: ${snapshot.error}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppColors.error, fontSize: 13),
               ),
@@ -406,7 +467,7 @@ class _ArtistSearchResults extends StatelessWidget {
         if (results.isEmpty) {
           return Center(
             child: Text(
-              q.isEmpty ? 'Start typing to search artists' : 'No artist found',
+              q.isEmpty ? 'Start typing to search' : 'No $noun found',
               style: TextStyle(color: textHint, fontSize: 14),
             ),
           );
@@ -422,7 +483,7 @@ class _ArtistSearchResults extends StatelessWidget {
             final name = (data['businessName'] ??
                     data['name'] ??
                     data['displayName'] ??
-                    'Artist')
+                    'Contact')
                 .toString();
             final image = (data['profileImageUrl'] ?? '').toString();
             final specializations =
@@ -948,7 +1009,7 @@ class _ChatTile extends StatelessWidget {
 }
 
 // ─── Shared User Avatar Widget ────────────────────────────────────────────────
-// Image hai toh image, nahi toh first letter — dono jagah use hoga
+// Shows the image if available, otherwise falls back to the first letter.
 
 class _UserAvatar extends StatelessWidget {
   final String? imageUrl;
@@ -1032,6 +1093,3 @@ class _FallbackAvatar extends StatelessWidget {
     );
   }
 }
-
-
-

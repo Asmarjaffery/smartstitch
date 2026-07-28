@@ -141,20 +141,23 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     );
   }
 
+  // 🆕 REORDERED: Basic Info → Details → Pricing → Images → Publish.
+  // Images step (which used to be step 0) now sits right before the
+  // final Publish/Preview step instead of being first.
   Widget _currentStepWidget(
     ServiceController c,
     bool isDark,
     int step,
     double galleryTileSize,
   ) {
-    if (step == 0) return _buildImagesStep(c, isDark, galleryTileSize);
-    if (step == 1) return _buildBasicInfoStep(c, isDark);
-    if (step == 2) return _buildDetailsStep(c, isDark);
-    if (step == 3) return _buildPricingStep(c, isDark);
+    if (step == 0) return _buildBasicInfoStep(c, isDark);
+    if (step == 1) return _buildDetailsStep(c, isDark);
+    if (step == 2) return _buildPricingStep(c, isDark);
+    if (step == 3) return _buildImagesStep(c, isDark, galleryTileSize);
     return _buildPublishStep(c, isDark);
   }
 
-  // ─── STEP 1: Images ─────────────────────────────────────────
+  // ─── Images Step ─────────────────────────────────────────────
   Widget _buildImagesStep(
     ServiceController c,
     bool isDark,
@@ -323,7 +326,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     );
   }
 
-  // ─── STEP 2: Category + Service Selection (auto-fills fields) ───
+  // ─── Category + Service Selection (auto-fills fields) ─────────
   Widget _buildBasicInfoStep(ServiceController c, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,7 +450,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     );
   }
 
-  // ─── STEP 3: Dynamic Category Details ─────────────────────────
+  // ─── Dynamic Category Details ──────────────────────────────────
   Widget _buildDetailsStep(ServiceController c, bool isDark) {
     return Obx(() {
       final fields = c.currentCategoryFields;
@@ -476,7 +479,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     });
   }
 
-  // ─── STEP 4: Pricing ────────────────────────────────────────────
+  // ─── Pricing ────────────────────────────────────────────────────
   Widget _buildPricingStep(ServiceController c, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -540,7 +543,7 @@ class _CreateServiceScreenState extends State<CreateServiceScreen> {
     );
   }
 
-  // ─── STEP 5: Enhanced Publish/Preview Screen ──────────────────────────────
+  // ─── Enhanced Publish/Preview Screen (always the last step) ────
   Widget _buildPublishStep(ServiceController c, bool isDark) {
     final Color textPrimary =
         isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary;

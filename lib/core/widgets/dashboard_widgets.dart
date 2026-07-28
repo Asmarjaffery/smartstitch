@@ -28,7 +28,7 @@ class KpiCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.lightSurface,
         borderRadius: BorderRadius.circular(20),
@@ -36,68 +36,84 @@ class KpiCard extends StatelessWidget {
         boxShadow: AppShadows.soft(color),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: color, size: 20),
+                child: Icon(icon, color: color, size: 18),
               ),
               if (trend != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (isPositiveTrend
-                            ? AppColors.success
-                            : AppColors.error)
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isPositiveTrend
-                            ? Icons.trending_up_rounded
-                            : Icons.trending_down_rounded,
-                        size: 12,
-                        color: isPositiveTrend
-                            ? AppColors.success
-                            : AppColors.error,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        trend!,
-                        style: AppTextStyles.caption.copyWith(
+                Flexible(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: (isPositiveTrend
+                              ? AppColors.success
+                              : AppColors.error)
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isPositiveTrend
+                              ? Icons.trending_up_rounded
+                              : Icons.trending_down_rounded,
+                          size: 11,
                           color: isPositiveTrend
                               ? AppColors.success
                               : AppColors.error,
-                          fontWeight: FontWeight.w700,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 2),
+                        Flexible(
+                          child: Text(
+                            trend!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.caption.copyWith(
+                              color: isPositiveTrend
+                                  ? AppColors.success
+                                  : AppColors.error,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: AppTextStyles.h3.copyWith(
-              color: AppColors.lightTextPrimary,
-              fontWeight: FontWeight.w800,
+          const SizedBox(height: 10),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: AppTextStyles.h3.copyWith(
+                  color: AppColors.lightTextPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.lightTextSecondary),
           ),

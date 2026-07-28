@@ -23,7 +23,9 @@ class ArtistWalletScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Artist Wallet',
             style: TextStyle(
-                fontFamily: 'Poppins', fontSize: 18, fontWeight: FontWeight.w600)),
+                fontFamily: 'Poppins',
+                fontSize: 18,
+                fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
@@ -31,7 +33,8 @@ class ArtistWalletScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.history_rounded),
             tooltip: 'Withdrawal History',
-            onPressed: () => Get.to(() => const ArtistWithdrawalHistoryScreen()),
+            onPressed: () =>
+                Get.to(() => const ArtistWithdrawalHistoryScreen()),
           ),
         ],
       ),
@@ -68,43 +71,50 @@ class ArtistWalletScreen extends StatelessWidget {
                 const SizedBox(height: 28),
                 const SectionHeader(title: 'Earnings Overview'),
                 const SizedBox(height: 14),
-                GridView.count(
-                  crossAxisCount: 2,
+                GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.35,
-                  children: [
-                    WalletStatCard(
-                      label: "Today's Earnings",
-                      amount: wallet.todayEarnings,
-                      icon: Icons.today_rounded,
-                      iconColor: WalletColors.teal700,
-                      iconBg: WalletColors.teal100,
-                    ),
-                    WalletStatCard(
-                      label: 'Weekly Earnings',
-                      amount: wallet.weekEarnings,
-                      icon: Icons.calendar_view_week_rounded,
-                      iconColor: WalletColors.blue,
-                      iconBg: WalletColors.blueBg,
-                    ),
-                    WalletStatCard(
-                      label: 'Monthly Earnings',
-                      amount: wallet.monthEarnings,
-                      icon: Icons.calendar_month_rounded,
-                      iconColor: WalletColors.purple,
-                      iconBg: WalletColors.purpleBg,
-                    ),
-                    WalletStatCard(
-                      label: 'Lifetime Earnings',
-                      amount: wallet.lifetimeEarnings,
-                      icon: Icons.workspace_premium_rounded,
-                      iconColor: WalletColors.amber,
-                      iconBg: WalletColors.amberBg,
-                    ),
-                  ],
+                  itemCount: 4,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    mainAxisExtent:
+                        140, // was 132 — extra headroom for text-scale variance
+                  ),
+                  itemBuilder: (context, index) {
+                    final cards = [
+                      WalletStatCard(
+                        label: "Today's Earnings",
+                        amount: wallet.todayEarnings,
+                        icon: Icons.today_rounded,
+                        iconColor: WalletColors.teal700,
+                        iconBg: WalletColors.teal100,
+                      ),
+                      WalletStatCard(
+                        label: 'Weekly Earnings',
+                        amount: wallet.weekEarnings,
+                        icon: Icons.calendar_view_week_rounded,
+                        iconColor: WalletColors.blue,
+                        iconBg: WalletColors.blueBg,
+                      ),
+                      WalletStatCard(
+                        label: 'Monthly Earnings',
+                        amount: wallet.monthEarnings,
+                        icon: Icons.calendar_month_rounded,
+                        iconColor: WalletColors.purple,
+                        iconBg: WalletColors.purpleBg,
+                      ),
+                      WalletStatCard(
+                        label: 'Lifetime Earnings',
+                        amount: wallet.lifetimeEarnings,
+                        icon: Icons.workspace_premium_rounded,
+                        iconColor: WalletColors.amber,
+                        iconBg: WalletColors.amberBg,
+                      ),
+                    ];
+                    return cards[index];
+                  },
                 ),
                 const SizedBox(height: 28),
                 SectionHeader(
@@ -315,7 +325,8 @@ class _TransactionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.15)),
+        border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.15)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
